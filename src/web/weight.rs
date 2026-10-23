@@ -43,6 +43,8 @@ pub struct Chart {
     pub width: u32,
     pub height: u32,
     pub points: String,
+    /// The line closed along the bottom axis, for the shaded area under it.
+    pub area: String,
     pub dots: Vec<ChartPoint>,
     pub y_ticks: Vec<ChartTick>,
     pub x_ticks: Vec<ChartTick>,
@@ -163,10 +165,17 @@ pub fn build_chart(entries: &[WeightEntry], units: UnitSystem, lang: Lang) -> Op
             ),
         ],
     );
+    let points = points.trim_end().to_string();
+    let area = format!(
+        "{:.1},{bottom:.1} {points} {:.1},{bottom:.1}",
+        x_of(first),
+        x_of(last)
+    );
     Some(Chart {
         width,
         height,
-        points: points.trim_end().to_string(),
+        points,
+        area,
         dots,
         y_ticks,
         x_ticks,
@@ -436,6 +445,8 @@ mod tests {
         assert_eq!(c.dots.len(), 3);
         assert_eq!(c.dots[0].x, "48.0");
         assert_eq!(c.dots[2].x, "624.0");
+        assert!(c.area.starts_with("48.0,220.0 48.0,"), "{}", c.area);
+        assert!(c.area.ends_with(" 624.0,220.0"), "{}", c.area);
         assert!(c.summary.contains("-1.5 kg"), "{}", c.summary);
     }
 

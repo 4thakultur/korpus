@@ -15,16 +15,66 @@ use crate::error::{AppError, AppResult};
 use crate::foods::{self, Food, FoodForm, SaveError};
 use crate::forms::{FieldErrors, InputField};
 use crate::i18n::Lang;
-use crate::nutrition::{Nutrient, fmt_amount, fmt_g, fmt_kcal};
+use crate::nutrition::{Nutrient, Nutrients, fmt_amount, fmt_g, fmt_kcal};
 use crate::profile;
 use crate::units::today_in;
 
 pub struct NutrientRow {
+    pub key: &'static str,
     pub label: &'static str,
     pub per100: String,
     pub per_serving: String,
     pub missing: bool,
     pub core: bool,
+}
+
+/// One part of the bar showing which macronutrient the energy comes from.
+pub struct SplitSegment {
+    pub key: &'static str,
+    pub label: &'static str,
+    /// Start and width in percent of the bar, for SVG attributes.
+    pub x: String,
+    pub width: String,
+    pub pct: u32,
+}
+
+/// Share of energy from protein, carbohydrate and fat, using the usual
+/// 4/4/9 kcal per gram factors. Empty when a macro is missing or all are 0,
+/// so the bar never suggests a split the data does not support.
+fn macro_split(n: &Nutrients, lang: Lang) -> Vec<SplitSegment> {
+    let parts = [
+        (Nutrient::Protein, n.protein_g, 4.0),
+        (Nutrient::Carbs, n.carbs_g, 4.0),
+        (Nutrient::Fat, n.fat_g, 9.0),
+    ];
+    let Some(kcal) = parts
+        .iter()
+        .map(|(_, g, f)| g.map(|g| g * f))
+        .collect::<Option<Vec<f64>>>()
+    else {
+        return Vec::new();
+    };
+    let total: f64 = kcal.iter().sum();
+    if total <= 0.0 {
+        return Vec::new();
+    }
+    let mut x = 0.0;
+    parts
+        .iter()
+        .zip(kcal)
+        .map(|((k, _, _), v)| {
+            let width = v / total * 100.0;
+            let seg = SplitSegment {
+                key: k.key(),
+                label: k.label(lang),
+                x: format!("{x:.2}"),
+                width: format!("{width:.2}"),
+                pct: width.round() as u32,
+            };
+            x += width;
+            seg
+        })
+        .collect()
 }
 
 #[derive(Template)]
@@ -37,6 +87,9 @@ pub struct FoodPage {
     pub basis_label: &'static str,
     pub unit: &'static str,
     pub rows: Vec<NutrientRow>,
+    /// Energy per 100 g/ml for the headline number; `None` when missing.
+    pub kcal: Option<String>,
+    pub split: Vec<SplitSegment>,
     pub missing_core: Vec<&'static str>,
     pub serving_heading: Option<String>,
     pub source_label: &'static str,
@@ -103,6 +156,7 @@ pub async fn detail_page(
         .map(|k| {
             let v = n.get(k);
             NutrientRow {
+                key: k.key(),
                 label: k.label(lang),
                 per100: v
                     .map(|v| fmt_value(k, v, lang))
@@ -157,6 +211,8 @@ pub async fn detail_page(
         basis_label: basis.label(lang),
         unit: basis.unit(),
         rows,
+        kcal: n.energy_kcal.map(fmt_kcal),
+        split: macro_split(&n, lang),
         missing_core: n
             .missing_core()
             .into_iter()
@@ -546,5 +602,44 @@ mod tests {
         assert_eq!(meal_for_hour(19), Meal::Dinner);
         assert_eq!(meal_for_hour(23), Meal::Snacks);
         assert_eq!(meal_for_hour(15), Meal::Snacks);
+    }
+
+    #[test]
+    fn macro_split_uses_energy_factors() {
+        let n = Nutrients {
+            protein_g: Some(10.0),
+            carbs_g: Some(10.0),
+            fat_g: Some(0.0),
+            ..Nutrients::default()
+        };
+        let s = macro_split(&n, Lang::En);
+        assert_eq!(s.iter().map(|s| s.pct).collect::<Vec<_>>(), [50, 50, 0]);
+        assert_eq!(s[1].x, "50.00");
+
+        let n = Nutrients {
+            protein_g: Some(10.0),
+            carbs_g: Some(0.0),
+            fat_g: Some(10.0),
+            ..Nutrients::default()
+        };
+        assert_eq!(macro_split(&n, Lang::En)[2].pct, 69);
+    }
+
+    #[test]
+    fn macro_split_is_empty_without_complete_macros() {
+        let missing = Nutrients {
+            protein_g: Some(10.0),
+            carbs_g: None,
+            fat_g: Some(1.0),
+            ..Nutrients::default()
+        };
+        assert!(macro_split(&missing, Lang::En).is_empty());
+        let zero = Nutrients {
+            protein_g: Some(0.0),
+            carbs_g: Some(0.0),
+            fat_g: Some(0.0),
+            ..Nutrients::default()
+        };
+        assert!(macro_split(&zero, Lang::En).is_empty());
     }
 }

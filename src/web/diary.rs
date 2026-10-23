@@ -61,6 +61,7 @@ pub struct MealView {
 }
 
 pub struct MacroView {
+    pub key: &'static str,
     pub label: &'static str,
     pub consumed: String,
     pub goal: Option<String>,
@@ -143,6 +144,7 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
     };
 
     let macro_view = |n: Nutrient, consumed: f64, goal: Option<f64>| MacroView {
+        key: n.key(),
         label: n.label(lang),
         consumed: lang.num(fmt_g(consumed)),
         goal: goal.map(|g| lang.num(fmt_g(g))),

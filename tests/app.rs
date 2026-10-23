@@ -870,11 +870,11 @@ async fn interface_follows_browser_until_a_language_is_chosen() {
     };
 
     let es = a.send(get_with_lang("es-ES,es;q=0.9")).await;
-    assert!(es.body.contains("<html lang=\"es\">"));
+    assert!(es.body.contains("<html lang=\"es\" "));
     assert!(es.body.contains("Desayuno"));
     assert!(es.body.contains("jueves, 22 de octubre de 2026"));
     let en = a.get("/diary?date=2026-10-22").await;
-    assert!(en.body.contains("<html lang=\"en\">"));
+    assert!(en.body.contains("<html lang=\"en\" "));
     assert!(en.body.contains("Breakfast"));
 
     // A chosen language wins over the browser.
@@ -883,7 +883,7 @@ async fn interface_follows_browser_until_a_language_is_chosen() {
         .await;
     assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
     let fr = a.send(get_with_lang("es-ES,es;q=0.9")).await;
-    assert!(fr.body.contains("<html lang=\"fr\">"));
+    assert!(fr.body.contains("<html lang=\"fr\" "));
     assert!(fr.body.contains("Petit-déjeuner"));
     assert!(fr.body.contains("jeudi 22 octobre 2026"));
     let settings = a.get("/settings?msg=settings_saved").await;
@@ -898,7 +898,7 @@ async fn interface_follows_browser_until_a_language_is_chosen() {
     a.post("/settings", "unit_system=metric&timezone=UTC&language=")
         .await;
     let es = a.send(get_with_lang("es")).await;
-    assert!(es.body.contains("<html lang=\"es\">"));
+    assert!(es.body.contains("<html lang=\"es\" "));
 }
 
 #[tokio::test]
@@ -1052,4 +1052,86 @@ async fn products_saved_before_names_existed_catch_up_in_search() {
     assert_eq!(names, 3);
     let again = a.get("/search?q=4000000000017").await;
     assert!(again.body.contains("Granola croustillant"));
+}
+
+#[tokio::test]
+async fn appearance_is_stored_per_device_in_a_cookie() {
+    let a = app().await;
+    a.setup().await;
+    let diary = a.get("/diary").await;
+    assert!(diary.body.contains("data-theme=\"auto\""));
+    assert!(diary.body.contains("content=\"light dark\""));
+
+    let res = a
+        .router
+        .clone()
+        .oneshot(
+            Request::post("/settings/appearance")
+                .header(header::HOST, "localhost")
+                .header(header::ORIGIN, "http://localhost")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("theme=dark"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::SEE_OTHER);
+    let cookie = res.headers()[header::SET_COOKIE].to_str().unwrap();
+    assert!(cookie.starts_with("korpus_theme=dark;"), "{cookie}");
+    assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Lax"));
+
+    let dark = a
+        .send(
+            Request::get("/settings?msg=appearance_saved")
+                .header(header::HOST, "localhost")
+                .header(header::COOKIE, "korpus_theme=dark")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert!(dark.body.contains("data-theme=\"dark\""));
+    assert!(
+        dark.body
+            .contains("<meta name=\"color-scheme\" content=\"dark\">")
+    );
+    assert!(dark.body.contains("value=\"dark\" checked"));
+    assert!(dark.body.contains("Appearance saved on this device."));
+
+    let bad = a.post("/settings/appearance", "theme=neon").await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    assert!(bad.body.contains("Choose an appearance."));
+
+    // Cross-site requests cannot change it either.
+    let cross = a
+        .send(
+            Request::post("/settings/appearance")
+                .header(header::HOST, "localhost")
+                .header("sec-fetch-site", "cross-site")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("theme=light"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(cross.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn nutrients_keep_their_colour_classes() {
+    let a = app().await;
+    a.setup().await;
+    let id = a.create_oats().await;
+    let detail = a.get(&format!("/foods/{id}")).await;
+    for key in ["c-protein", "c-carbs", "c-fat"] {
+        assert!(detail.body.contains(key), "{key} missing on food page");
+    }
+    assert!(detail.body.contains("class=\"split-bar\""));
+
+    a.post(
+        "/diary/entries",
+        &format!("food_id={id}&date=2026-05-01&meal=lunch&amount=50"),
+    )
+    .await;
+    let day = a.get("/diary?date=2026-05-01").await;
+    assert!(day.body.contains("<div class=\"c-protein\">"));
+    assert!(day.body.contains("<b>P</b> 6.5 g"), "{}", day.body);
 }

@@ -5,6 +5,7 @@ mod foods;
 mod goals;
 mod search;
 mod settings;
+mod theme;
 mod weight;
 
 use std::sync::Arc;
@@ -30,6 +31,8 @@ use crate::diary::Meal;
 use crate::error::{AppError, AppResult};
 use crate::i18n::Lang;
 use crate::providers::Providers;
+
+pub use theme::{Theme, current_theme};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -75,6 +78,7 @@ pub fn router(state: AppState) -> Router {
         .route("/weight/{id}/delete", post(weight::delete))
         .route("/goals", get(goals::page).post(goals::save))
         .route("/settings", get(settings::page).post(settings::save))
+        .route("/settings/appearance", post(settings::appearance))
         .route("/settings/export.json", get(settings::export_json))
         .route("/settings/diary.csv", get(settings::export_csv))
         .route("/settings/backup.sqlite", get(settings::backup))
@@ -136,7 +140,8 @@ pub fn current_lang() -> Lang {
 
 /// Resolves the interface language once per request: the profile setting,
 /// or the browser's `Accept-Language` when none is chosen. Handlers and
-/// error pages read it with [`current_lang`].
+/// error pages read it with [`current_lang`]. The appearance cookie is
+/// resolved alongside it for [`current_theme`].
 async fn language(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let path = req.uri().path();
     if path.starts_with("/static/") || path == "/healthz" || path == "/readyz" {
@@ -150,7 +155,9 @@ async fn language(State(state): State<AppState>, req: Request, next: Next) -> Re
         }
     };
     let lang = chosen.unwrap_or_else(|| browser_lang(req.headers()));
-    LANG.scope(lang, next.run(req)).await
+    let theme = Theme::from_headers(req.headers());
+    LANG.scope(lang, theme::THEME.scope(theme, next.run(req)))
+        .await
 }
 
 pub fn browser_lang(headers: &axum::http::HeaderMap) -> Lang {
@@ -281,6 +288,7 @@ pub fn flash_message(key: Option<&str>, lang: Lang) -> Option<&'static str> {
         "weight_deleted" => lang.t("Weight entry deleted."),
         "goals_saved" => lang.t("Goal settings saved."),
         "settings_saved" => lang.t("Settings saved."),
+        "appearance_saved" => lang.t("Appearance saved on this device."),
         "imported" => lang.t("Import complete."),
         _ => return None,
     })

@@ -181,6 +181,17 @@
       });
     });
 
+    // Preview the appearance as soon as it is picked; saving stores it.
+    document.querySelectorAll("[data-theme-picker]").forEach(function (group) {
+      group.addEventListener("change", function (e) {
+        var theme = e.target && e.target.value;
+        if (!theme) return;
+        document.documentElement.setAttribute("data-theme", theme);
+        var meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta) meta.setAttribute("content", theme === "auto" ? "light dark" : theme);
+      });
+    });
+
     document.querySelectorAll("input[data-autosubmit]").forEach(function (i) {
       i.addEventListener("change", function () { if (i.value) i.form.submit(); });
     });

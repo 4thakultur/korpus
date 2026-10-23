@@ -118,6 +118,15 @@ and profile data are never sent anywhere. The browser loads no third-party
 scripts, fonts or images. Set `KORPUS_OFF_ENABLED=false` to turn the provider
 off completely.
 
+### Appearance
+
+The interface follows the device's light or dark setting. **Settings →
+Appearance** can force Light or Dark (true black, for OLED screens) on one
+device; the choice is stored in a `korpus_theme` cookie that holds nothing
+else and never leaves your server. Protein, carbohydrate and fat each keep
+one colour everywhere (pink, orange and cyan), always next to their name or
+letter so colour is never the only cue.
+
 ### Languages and food names
 
 The interface language is a setting (**Settings → Language**). Left on

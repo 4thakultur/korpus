@@ -114,6 +114,21 @@ impl Nutrient {
         }
     }
 
+    /// Stable identifier, used as a CSS class so each nutrient keeps one
+    /// colour across the interface.
+    pub fn key(self) -> &'static str {
+        match self {
+            Nutrient::Energy => "energy",
+            Nutrient::Protein => "protein",
+            Nutrient::Carbs => "carbs",
+            Nutrient::Fat => "fat",
+            Nutrient::Fiber => "fiber",
+            Nutrient::Sugars => "sugars",
+            Nutrient::SatFat => "sat-fat",
+            Nutrient::Salt => "salt",
+        }
+    }
+
     pub fn unit(self) -> &'static str {
         match self {
             Nutrient::Energy => "kcal",

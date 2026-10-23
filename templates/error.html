@@ -1,18 +1,20 @@
 <!doctype html>
-<html lang="{{ lang.code() }}">
+{% let ui_theme = crate::web::current_theme() %}
+<html lang="{{ lang.code() }}" data-theme="{{ ui_theme.as_str() }}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="{{ ui_theme.color_scheme() }}">
 <title>{{ title }} · Korpus</title>
 <link rel="stylesheet" href="/static/app.css?v={{ crate::web::ASSET_VERSION }}">
 </head>
 <body>
-<header class="site-header"><a class="brand" href="/">Korpus</a></header>
 <main id="main">
-  <h1>{{ title }}</h1>
-  <p>{{ message }}</p>
-  <p><a class="button" href="/diary">{{ lang.t("Go to today's diary") }}</a></p>
+  <header class="page-head"><p class="eyebrow">Korpus</p><h1>{{ title }}</h1></header>
+  <div class="card">
+    <p>{{ message }}</p>
+    <a class="button primary block" href="/diary">{{ lang.t("Go to today's diary") }}</a>
+  </div>
 </main>
 </body>
 </html>

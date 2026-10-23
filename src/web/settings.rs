@@ -8,7 +8,8 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
 use super::{
-    AppState, browser_lang, current_lang, flash_message, render, render_status, see_other,
+    AppState, Theme, browser_lang, current_lang, current_theme, flash_message, render,
+    render_status, see_other,
 };
 use crate::backup::{self, Export, MAX_IMPORT_BYTES};
 use crate::error::{AppError, AppResult};
@@ -166,6 +167,8 @@ pub struct SettingsPage {
     pub providers: Vec<ProviderInfo>,
     pub version: &'static str,
     pub languages: Vec<LanguageOption>,
+    pub theme: Theme,
+    pub themes: [Theme; 3],
 }
 
 async fn settings_page(
@@ -201,7 +204,26 @@ async fn settings_page(
             .collect(),
         version: env!("CARGO_PKG_VERSION"),
         languages: language_options(lang),
+        theme: current_theme(),
+        themes: Theme::ALL,
     })
+}
+
+#[derive(Deserialize)]
+pub struct AppearanceForm {
+    #[serde(default)]
+    theme: String,
+}
+
+/// Stores the light/dark choice for this browser only.
+pub async fn appearance(Form(form): Form<AppearanceForm>) -> AppResult<Response> {
+    let lang = current_lang();
+    let theme = Theme::parse(&form.theme)
+        .ok_or_else(|| AppError::BadRequest(lang.t("Choose an appearance.").into()))?;
+    let mut res = see_other("/settings?msg=appearance_saved");
+    res.headers_mut()
+        .insert(header::SET_COOKIE, theme.set_cookie());
+    Ok(res)
 }
 
 #[derive(Deserialize)]

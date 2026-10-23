@@ -6,11 +6,11 @@
   <p class="hint" id="language-hint">{{ lang.t("Also the language in which food databases are searched and product names are shown.") }}</p>
   {% if let Some(e) = errors.get("language") %}<p class="field-error" id="language-error">{{ e }}</p>{% endif %}
 </div>
-<fieldset id="unit_system">
+<fieldset id="unit_system" class="inner">
   <legend>{{ lang.t("Units for body weight and height") }}</legend>
-  <div class="radios">
-    <label><input type="radio" name="unit_system" value="metric"{% if form.unit_system == "metric" %} checked{% endif %}> {{ lang.t("Metric (kg, cm)") }}</label>
-    <label><input type="radio" name="unit_system" value="imperial"{% if form.unit_system == "imperial" %} checked{% endif %}> {{ lang.t("Imperial (lb, in)") }}</label>
+  <div class="segmented">
+    <label><input type="radio" name="unit_system" value="metric"{% if form.unit_system == "metric" %} checked{% endif %}><span>{{ lang.t("Metric (kg, cm)") }}</span></label>
+    <label><input type="radio" name="unit_system" value="imperial"{% if form.unit_system == "imperial" %} checked{% endif %}><span>{{ lang.t("Imperial (lb, in)") }}</span></label>
   </div>
   <p class="hint">{{ lang.t("Food amounts always use grams or millilitres, as on nutrition labels.") }}</p>
   {% if let Some(e) = errors.get("unit_system") %}<p class="field-error">{{ e }}</p>{% endif %}

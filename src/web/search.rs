@@ -50,15 +50,12 @@ impl SearchQuery {
 pub struct ResultRow {
     pub name: String,
     pub brand: String,
-    pub barcode: String,
     pub basis_label: &'static str,
     pub kcal: String,
     pub protein: String,
     pub carbs: String,
     pub fat: String,
     pub missing: String,
-    pub source_label: &'static str,
-    pub updated: String,
 }
 
 fn missing_label(n: &Nutrients, lang: Lang) -> String {
@@ -70,29 +67,24 @@ fn missing_label(n: &Nutrients, lang: Lang) -> String {
     missing.join(", ")
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The list shows only what helps pick a food; source, barcode and dates
+/// are on the food's own page.
 fn row(
     name: &str,
     brand: Option<&str>,
-    barcode: Option<&str>,
     basis: crate::nutrition::Basis,
     n: &Nutrients,
-    source: &str,
-    updated: Option<&str>,
     lang: Lang,
 ) -> ResultRow {
     ResultRow {
         name: name.to_string(),
         brand: brand.unwrap_or("").to_string(),
-        barcode: barcode.unwrap_or("").to_string(),
         basis_label: basis.label(lang),
         kcal: fmt_opt_kcal(n.energy_kcal),
         protein: lang.num(fmt_opt_g(n.protein_g)),
         carbs: lang.num(fmt_opt_g(n.carbs_g)),
         fat: lang.num(fmt_opt_g(n.fat_g)),
         missing: missing_label(n, lang),
-        source_label: foods::source_label(source, lang),
-        updated: updated.unwrap_or("").to_string(),
     }
 }
 
@@ -112,16 +104,7 @@ fn local_item(f: &Food, ctx: &LogContext, lang: Lang) -> ResultItem {
         url: Some(ctx.url(&format!("/foods/{}", f.id))),
         source: "",
         provider_id: String::new(),
-        row: row(
-            &f.name,
-            f.brand.as_deref(),
-            f.barcode.as_deref(),
-            f.basis(),
-            &f.nutrients(),
-            &f.source,
-            f.source_updated_at.as_deref(),
-            lang,
-        ),
+        row: row(&f.name, f.brand.as_deref(), f.basis(), &f.nutrients(), lang),
     }
 }
 
@@ -130,16 +113,7 @@ fn remote_item(p: &ProviderFood, lang: Lang) -> ResultItem {
         url: None,
         source: p.source,
         provider_id: p.provider_id.clone(),
-        row: row(
-            &p.name,
-            p.brand.as_deref(),
-            p.barcode.as_deref(),
-            p.basis,
-            &p.nutrients,
-            p.source,
-            p.source_updated_at.as_deref(),
-            lang,
-        ),
+        row: row(&p.name, p.brand.as_deref(), p.basis, &p.nutrients, lang),
     }
 }
 

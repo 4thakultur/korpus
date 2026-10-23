@@ -722,11 +722,11 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Una entrada por día; registrar de nuevo la misma fecha la sustituye. Su objetivo calórico no cambia automáticamente.",
     ),
     ("Save weight", "Enregistrer le poids", "Guardar peso"),
-    ("Trend", "Tendance", "Tendencia"),
+    ("Latest", "Dernière mesure", "Última medición"),
     (
-        "The table below lists every entry.",
-        "Le tableau ci-dessous liste toutes les entrées.",
-        "La tabla de abajo muestra todas las entradas.",
+        "The list below shows every entry.",
+        "La liste ci-dessous montre toutes les entrées.",
+        "La lista de abajo muestra todas las entradas.",
     ),
     ("History", "Historique", "Historial"),
     (
@@ -735,7 +735,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Todavía no hay pesos registrados.",
     ),
     ("Change", "Variation", "Cambio"),
-    ("Actions", "Actions", "Acciones"),
     ("Edit", "Modifier", "Editar"),
     ("Weight ({0})", "Poids ({0})", "Peso ({0})"),
     (
@@ -751,11 +750,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
     ("Next", "Suivant", "Siguiente"),
     ("Back to today", "Revenir à aujourd'hui", "Volver a hoy"),
     ("Daily summary", "Résumé du jour", "Resumen del día"),
-    (
-        "Calories eaten compared with target",
-        "Calories consommées par rapport à l'objectif",
-        "Calorías consumidas respecto al objetivo",
-    ),
     ("remaining", "restantes", "restantes"),
     (
         "above target",
@@ -1255,7 +1249,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Impossible d'interroger {0} : {1}.",
         "No se pudo buscar en {0}: {1}.",
     ),
-    ("updated {0}", "mis à jour le {0}", "actualizado el {0}"),
     ("Missing: {0}", "Manquant : {0}", "Falta: {0}"),
     ("Results", "Résultats", "Resultados"),
     (
@@ -1273,6 +1266,35 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Result pages",
         "Pages de résultats",
         "Páginas de resultados",
+    ),
+    (
+        "Where the energy comes from",
+        "Origine des calories",
+        "Origen de las calorías",
+    ),
+    ("Appearance", "Apparence", "Apariencia"),
+    ("Automatic", "Automatique", "Automático"),
+    ("Light", "Clair", "Claro"),
+    ("Dark", "Sombre", "Oscuro"),
+    (
+        "Automatic follows your device. Dark uses true black, which saves power on OLED screens. Saved on this device only.",
+        "Automatique suit votre appareil. Sombre utilise un noir pur, qui économise l'énergie sur les écrans OLED. Enregistré sur cet appareil uniquement.",
+        "Automático sigue a su dispositivo. Oscuro usa negro puro, que ahorra energía en pantallas OLED. Se guarda solo en este dispositivo.",
+    ),
+    (
+        "Save appearance",
+        "Enregistrer l'apparence",
+        "Guardar apariencia",
+    ),
+    (
+        "Appearance saved on this device.",
+        "Apparence enregistrée sur cet appareil.",
+        "Apariencia guardada en este dispositivo.",
+    ),
+    (
+        "Choose an appearance.",
+        "Choisissez une apparence.",
+        "Elija una apariencia.",
     ),
 ];
 

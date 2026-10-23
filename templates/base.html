@@ -1,32 +1,33 @@
 <!doctype html>
-<html lang="{{ lang.code() }}">
+{% let ui_theme = crate::web::current_theme() %}
+<html lang="{{ lang.code() }}" data-theme="{{ ui_theme.as_str() }}">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="{{ ui_theme.color_scheme() }}">
+{% match ui_theme %}{% when crate::web::Theme::Light %}<meta name="theme-color" content="#f2f2f7">{% when crate::web::Theme::Dark %}<meta name="theme-color" content="#000000">{% else %}<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">{% endmatch %}
 <title>{{ title }} · Korpus</title>
 <link rel="stylesheet" href="/static/app.css?v={{ crate::web::ASSET_VERSION }}">
 <script src="/static/app.js?v={{ crate::web::ASSET_VERSION }}" defer></script>
 </head>
-<body data-t-remote-error="{{ lang.t("External results could not be loaded. Your own foods are still available above.") }}"
+<body{% if !nav.is_empty() %} class="has-tabs"{% endif %}
+      data-t-remote-error="{{ lang.t("External results could not be loaded. Your own foods are still available above.") }}"
       data-t-this-amount="{{ lang.t("This amount:") }}"
       data-t-p="{{ lang.t("P") }}" data-t-c="{{ lang.t("C") }}" data-t-f="{{ lang.t("F") }}"
       data-decimal="{{ lang.decimal_separator() }}">
 <a class="skip-link" href="#main">{{ lang.t("Skip to content") }}</a>
-<header class="site-header">
-  <a class="brand" href="/">Korpus</a>
-  {% if !nav.is_empty() %}
-  <nav aria-label="{{ lang.t("Main") }}">
-    <ul>
-      <li><a href="/diary"{% if nav == "diary" %} aria-current="page"{% endif %}>{{ lang.t("Diary") }}</a></li>
-      <li><a href="/search"{% if nav == "foods" %} aria-current="page"{% endif %}>{{ lang.t("Foods") }}</a></li>
-      <li><a href="/weight"{% if nav == "weight" %} aria-current="page"{% endif %}>{{ lang.t("Weight") }}</a></li>
-      <li><a href="/goals"{% if nav == "goals" %} aria-current="page"{% endif %}>{{ lang.t("Goals") }}</a></li>
-      <li><a href="/settings"{% if nav == "settings" %} aria-current="page"{% endif %}>{{ lang.t("Settings") }}</a></li>
-    </ul>
-  </nav>
-  {% endif %}
-</header>
+{% if !nav.is_empty() %}
+<nav class="tab-bar" aria-label="{{ lang.t("Main") }}">
+  <ul>
+    <li><a href="/diary"{% if nav == "diary" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="16" rx="3.5"/><path d="M3.5 9.5h17M8 2.75v3.5M16 2.75v3.5"/><path d="M8 13.5h3M8 16.5h6"/></svg><span>{{ lang.t("Diary") }}</span></a></li>
+    <li><a href="/search"{% if nav == "foods" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.75-4.75"/></svg><span>{{ lang.t("Foods") }}</span></a></li>
+    <li><a href="/weight"{% if nav == "weight" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M7.75 11a5 5 0 0 1 8.5 0"/><path d="m12 11.5 1.75-2.75"/></svg><span>{{ lang.t("Weight") }}</span></a></li>
+    <li><a href="/goals"{% if nav == "goals" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5"/><circle class="fill-on-current" cx="12" cy="12" r="1.5"/></svg><span>{{ lang.t("Goals") }}</span></a></li>
+    <li><a href="/settings"{% if nav == "settings" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h8.5M17.5 7H20M4 12h2.5M11.5 12H20M4 17h10.5M19.5 17h.5"/><circle cx="15" cy="7" r="2.25"/><circle cx="9" cy="12" r="2.25"/><circle cx="17" cy="17" r="2.25"/></svg><span>{{ lang.t("Settings") }}</span></a></li>
+  </ul>
+</nav>
+{% endif %}
 <main id="main" tabindex="-1">
 {% block content %}{% endblock %}
 </main>
