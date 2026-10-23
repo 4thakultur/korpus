@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ lang.f1("Delete “{0}”?", food.name) }}</h1>
+{% if references > 0 %}
+<p>{% if references == 1 %}{{ lang.t("This food is used in 1 diary entry.") }}{% else %}{{ lang.f1("This food is used in {0} diary entries.", references) }}{% endif %} {{ lang.t("Those entries will stay in your diary with the values they were logged with.") }}</p>
+{% else %}
+<p>{{ lang.t("This food is not used in your diary.") }}</p>
+{% endif %}
+<p>{{ lang.t("This cannot be undone.") }}</p>
+<form method="post" action="/foods/{{ food.id }}/delete">
+  <ul class="actions">
+    <li><button type="submit" class="danger">{{ lang.t("Delete food") }}</button></li>
+    <li><a class="button" href="/foods/{{ food.id }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+{% endblock %}

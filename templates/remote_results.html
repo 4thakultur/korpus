@@ -1,0 +1,4 @@
+<ul data-has-more="{{ has_more }}" data-retry="{{ retry }}">
+{% for item in items %}{% include "_result_item.html" %}{% endfor %}
+</ul>
+{% if retry %}<p class="subtle retry">{{ lang.t("Many searches in a short time; more results will appear in a moment…") }}</p>{% else %}{% for e in errors %}<p class="warning" role="alert"><span aria-hidden="true">⚠</span> {{ e }} {{ lang.t("Your own foods still work.") }}</p>{% endfor %}{% endif %}

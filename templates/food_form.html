@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% if let Some(n) = provider_note %}<p class="note">{{ n }}</p>{% endif %}
+{% include "_errors.html" %}
+{% if let Some(u) = duplicate_url %}<p class="warning"><a href="{{ u }}">{{ lang.t("Open the food that already uses this barcode") }}</a></p>{% endif %}
+<form method="post" action="{{ action }}" class="stack" novalidate>
+  <fieldset>
+    <legend>{{ lang.t("Product") }}</legend>
+    <div class="field">
+      <label for="name">{{ lang.t("Name") }} <span class="req">{{ lang.t("(required)") }}</span></label>
+      <input type="text" id="name" name="name" value="{{ form.name }}" maxlength="200" required autocomplete="off" {% if errors.has("name") %}aria-invalid="true" aria-describedby="name-error"{% endif %}>
+      {% if let Some(e) = errors.get("name") %}<p class="field-error" id="name-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label for="brand">{{ lang.t("Brand") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <input type="text" id="brand" name="brand" value="{{ form.brand }}" maxlength="120" autocomplete="off" {% if errors.has("brand") %}aria-invalid="true" aria-describedby="brand-error"{% endif %}>
+      {% if let Some(e) = errors.get("brand") %}<p class="field-error" id="brand-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label for="barcode">{{ lang.t("Barcode") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <input type="text" id="barcode" name="barcode" value="{{ form.barcode }}" inputmode="numeric" maxlength="20" autocomplete="off" aria-describedby="barcode-hint{% if errors.has("barcode") %} barcode-error{% endif %}" {% if errors.has("barcode") %}aria-invalid="true"{% endif %}>
+      <p class="hint" id="barcode-hint">{{ lang.t("The digits under the barcode, so you can find the product by scanning or typing it later.") }}</p>
+      {% if let Some(e) = errors.get("barcode") %}<p class="field-error" id="barcode-error">{{ e }}</p>{% endif %}
+    </div>
+  </fieldset>
+
+  <fieldset id="basis">
+    <legend>{{ lang.t("Values are given") }}</legend>
+    <div class="radios">
+      <label><input type="radio" name="basis" value="g"{% if form.basis == "g" %} checked{% endif %}> {{ lang.t("per 100 g (solid foods)") }}</label>
+      <label><input type="radio" name="basis" value="ml"{% if form.basis == "ml" %} checked{% endif %}> {{ lang.t("per 100 ml (drinks, liquids)") }}</label>
+    </div>
+    {% if let Some(e) = errors.get("basis") %}<p class="field-error">{{ e }}</p>{% endif %}
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ lang.t("Nutrition per 100 g or 100 ml") }}</legend>
+    <p class="hint">{{ lang.t("Copy the values from the label. Decimal commas are fine. Use 0 for none.") }}</p>
+    <div class="field">
+      <label for="energy">{{ lang.t("Energy") }} <span class="req">{{ lang.t("(required)") }}</span></label>
+      <div class="input-unit">
+        <input type="text" id="energy" name="energy" value="{{ form.energy }}" inputmode="decimal" required autocomplete="off" {% if errors.has("energy") %}aria-invalid="true" aria-describedby="energy-error"{% endif %}>
+        <label for="energy_unit" class="visually-hidden">{{ lang.t("Energy unit") }}</label>
+        <select id="energy_unit" name="energy_unit">
+          <option value="kcal"{% if form.energy_unit != "kj" %} selected{% endif %}>kcal</option>
+          <option value="kj"{% if form.energy_unit == "kj" %} selected{% endif %}>kJ</option>
+        </select>
+      </div>
+      {% if let Some(e) = errors.get("energy") %}<p class="field-error" id="energy-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="grid-2">
+    {% for nf in self.nutrient_fields() %}{% let id = nf.id %}{% let label = nf.label %}{% let value = nf.value.as_str() %}{% let required = nf.required %}
+      <div class="field">
+        <label for="{{ id }}">{{ label }} {% if required %}<span class="req">{{ lang.t("(required)") }}</span>{% else %}<span class="opt">{{ lang.t("(optional)") }}</span>{% endif %}</label>
+        <div class="input-unit">
+          <input type="text" id="{{ id }}" name="{{ id }}" value="{{ value }}" inputmode="decimal" autocomplete="off" {% if required %}required{% endif %} {% if errors.has(id) %}aria-invalid="true" aria-describedby="{{ id }}-error"{% endif %}>
+          <span aria-hidden="true">g</span>
+        </div>
+        {% if let Some(e) = errors.get(id) %}<p class="field-error" id="{{ id }}-error">{{ e }}</p>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ lang.t("Serving") }} <span class="opt">{{ lang.t("(optional)") }}</span></legend>
+    <div class="grid-2">
+      <div class="field">
+        <label for="serving_amount">{{ lang.t("Serving size in g or ml") }}</label>
+        <input type="text" id="serving_amount" name="serving_amount" value="{{ form.serving_amount }}" inputmode="decimal" autocomplete="off" {% if errors.has("serving_amount") %}aria-invalid="true" aria-describedby="serving_amount-error"{% endif %}>
+        {% if let Some(e) = errors.get("serving_amount") %}<p class="field-error" id="serving_amount-error">{{ e }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label for="serving_label">{{ lang.t("Serving name") }}</label>
+        <input type="text" id="serving_label" name="serving_label" value="{{ form.serving_label }}" maxlength="60" placeholder="{{ lang.t("e.g. 1 slice") }}" autocomplete="off" {% if errors.has("serving_label") %}aria-invalid="true" aria-describedby="serving_label-error"{% endif %}>
+        {% if let Some(e) = errors.get("serving_label") %}<p class="field-error" id="serving_label-error">{{ e }}</p>{% endif %}
+      </div>
+    </div>
+    <div class="field">
+      <label for="notes">{{ lang.t("Notes") }}</label>
+      <textarea id="notes" name="notes" rows="3" maxlength="2000" {% if errors.has("notes") %}aria-invalid="true" aria-describedby="notes-error"{% endif %}>{{ form.notes }}</textarea>
+      {% if let Some(e) = errors.get("notes") %}<p class="field-error" id="notes-error">{{ e }}</p>{% endif %}
+    </div>
+  </fieldset>
+  <ul class="actions">
+    <li><button type="submit" class="primary">{% if is_edit %}{{ lang.t("Save changes") }}{% else %}{{ lang.t("Create food") }}{% endif %}</button></li>
+    <li><a class="button" href="{{ cancel_url }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+  {% if is_edit %}<p class="hint">{{ lang.t("Diary entries you already logged keep their original values.") }}</p>{% endif %}
+</form>
+{% endblock %}

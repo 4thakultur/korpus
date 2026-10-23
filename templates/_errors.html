@@ -1,0 +1,10 @@
+{% if !errors.is_empty() %}
+<div class="error-summary" role="alert" tabindex="-1" data-focus>
+  <h2>{{ lang.t("Please correct the following") }}</h2>
+  <ul>
+  {% for (field, msg) in errors.iter() %}
+    <li><a href="#{{ field }}">{{ msg }}</a></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}

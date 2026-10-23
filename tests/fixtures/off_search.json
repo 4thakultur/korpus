@@ -1,0 +1,50 @@
+{
+  "hits": [
+    {
+      "code": "5000112637922",
+      "product_name": "Orange juice",
+      "brands": [
+        "Example Juices"
+      ],
+      "quantity": "1 l",
+      "nutriments": {
+        "energy-kj_100g": 188,
+        "proteins_100g": "0.7",
+        "carbohydrates_100g": 10.4,
+        "sugars_100g": 8.9,
+        "fat_100g": 0
+      }
+    },
+    {
+      "code": "0000000000000123",
+      "product_name": "Bad code product",
+      "nutriments": {
+        "energy-kcal_100g": 100
+      }
+    },
+    {
+      "code": "4000000000001",
+      "product_name": "",
+      "nutriments": {
+        "energy-kcal_100g": 100
+      }
+    },
+    {
+      "code": "4000000000002",
+      "product_name": "Broken data bar",
+      "brands": [],
+      "product_quantity_unit": "g",
+      "nutriments": {
+        "energy-kcal_100g": 450,
+        "proteins_100g": 450,
+        "carbohydrates_100g": 60,
+        "fat_100g": -3
+      }
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "page_count": 3,
+  "count": 57,
+  "is_count_exact": true
+}

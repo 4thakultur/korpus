@@ -1,0 +1,1055 @@
+//! Route-level tests against a fresh in-memory database with real migrations.
+//! External providers are replaced with a fake; no test touches the network.
+
+use std::sync::{Arc, Mutex};
+
+use axum::Router;
+use axum::body::{Body, to_bytes};
+use axum::http::{Request, StatusCode, header};
+use korpus::config::Config;
+use korpus::i18n::Lang;
+use korpus::nutrition::{Basis, Nutrients};
+use korpus::providers::{
+    BoxFuture, FoodProvider, ProviderError, ProviderFood, ProviderPage, Providers,
+};
+use korpus::web::{AppState, router};
+use sqlx::SqlitePool;
+use tower::ServiceExt;
+
+struct FakeProvider {
+    fail: Mutex<bool>,
+    /// Language of the most recent request, to check what Korpus asks for.
+    last_lang: Mutex<Option<Lang>>,
+}
+
+impl FakeProvider {
+    fn record(&self, lang: Lang) {
+        *self.last_lang.lock().unwrap() = Some(lang);
+    }
+}
+
+/// The product name the fake database holds for each language, like Open
+/// Food Facts' `product_name_xx` fields.
+fn granola_name(lang: Lang) -> &'static str {
+    match lang {
+        Lang::En => "Remote granola",
+        Lang::Fr => "Granola croustillant",
+        Lang::Es => "Granola crujiente",
+    }
+}
+
+fn fake_food(code: &str, name: &str) -> ProviderFood {
+    ProviderFood {
+        source: "openfoodfacts",
+        provider_id: code.to_string(),
+        name: name.to_string(),
+        names: Vec::new(),
+        brand: Some("Fake Brand".into()),
+        barcode: Some(code.to_string()),
+        basis: Basis::Per100g,
+        basis_inferred: true,
+        nutrients: Nutrients {
+            energy_kcal: Some(400.0),
+            protein_g: Some(8.0),
+            carbs_g: Some(70.0),
+            fat_g: None,
+            ..Default::default()
+        },
+        energy_from_kj: false,
+        serving_amount: Some(30.0),
+        serving_label: Some("30 g".into()),
+        source_updated_at: Some("2025-05-01".into()),
+        rejected: vec![],
+    }
+}
+
+impl FoodProvider for FakeProvider {
+    fn id(&self) -> &'static str {
+        "openfoodfacts"
+    }
+    fn name(&self) -> &'static str {
+        "Fake Food Facts"
+    }
+    fn attribution(&self, _lang: Lang) -> &'static str {
+        "Fake attribution."
+    }
+    fn attribution_url(&self) -> &'static str {
+        "https://example.invalid"
+    }
+    fn search<'a>(
+        &'a self,
+        q: &'a str,
+        _page: usize,
+        lang: Lang,
+    ) -> BoxFuture<'a, Result<ProviderPage, ProviderError>> {
+        Box::pin(async move {
+            self.record(lang);
+            if *self.fail.lock().unwrap() {
+                return Err(ProviderError::Timeout);
+            }
+            Ok(ProviderPage {
+                foods: vec![
+                    fake_food("4000000000017", &format!("Remote {q}")),
+                    fake_food("4000000000024", "Remote other"),
+                ],
+                has_more: false,
+            })
+        })
+    }
+    fn get<'a>(
+        &'a self,
+        id: &'a str,
+        lang: Lang,
+    ) -> BoxFuture<'a, Result<Option<ProviderFood>, ProviderError>> {
+        Box::pin(async move {
+            self.record(lang);
+            if *self.fail.lock().unwrap() {
+                return Err(ProviderError::Unavailable("down".into()));
+            }
+            Ok((id == "4000000000017").then(|| ProviderFood {
+                names: Lang::ALL
+                    .into_iter()
+                    .map(|l| (l, granola_name(l).to_string()))
+                    .collect(),
+                ..fake_food(id, granola_name(lang))
+            }))
+        })
+    }
+    fn lookup_barcode<'a>(
+        &'a self,
+        code: &'a str,
+        lang: Lang,
+    ) -> BoxFuture<'a, Result<Option<ProviderFood>, ProviderError>> {
+        self.get(code, lang)
+    }
+}
+
+struct App {
+    router: Router,
+    db: SqlitePool,
+    provider: Arc<FakeProvider>,
+}
+
+async fn app() -> App {
+    let db = korpus::db::connect_memory().await.unwrap();
+    let provider = Arc::new(FakeProvider {
+        fail: Mutex::new(false),
+        last_lang: Mutex::new(None),
+    });
+    let config = Config::from_lookup(|_| None).unwrap();
+    let router = router(AppState {
+        db: db.clone(),
+        providers: Arc::new(Providers::new(vec![provider.clone()])),
+        config: Arc::new(config),
+    });
+    App {
+        router,
+        db,
+        provider,
+    }
+}
+
+struct Resp {
+    status: StatusCode,
+    location: Option<String>,
+    body: String,
+}
+
+impl App {
+    async fn send(&self, req: Request<Body>) -> Resp {
+        let res = self.router.clone().oneshot(req).await.unwrap();
+        let status = res.status();
+        let location = res
+            .headers()
+            .get(header::LOCATION)
+            .map(|v| v.to_str().unwrap().to_string());
+        let bytes = to_bytes(res.into_body(), 10 * 1024 * 1024).await.unwrap();
+        Resp {
+            status,
+            location,
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+        }
+    }
+
+    async fn get(&self, uri: &str) -> Resp {
+        self.send(
+            Request::get(uri)
+                .header(header::HOST, "localhost")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+    }
+
+    async fn post(&self, uri: &str, form: &str) -> Resp {
+        self.send(
+            Request::post(uri)
+                .header(header::HOST, "localhost")
+                .header(header::ORIGIN, "http://localhost")
+                .header("sec-fetch-site", "same-origin")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(form.to_string()))
+                .unwrap(),
+        )
+        .await
+    }
+
+    async fn setup(&self) {
+        let r = self.post("/setup", "unit_system=metric&timezone=UTC").await;
+        assert_eq!(r.status, StatusCode::SEE_OTHER);
+    }
+
+    async fn create_oats(&self) -> i64 {
+        let r = self
+            .post(
+                "/foods",
+                "name=Rolled+oats&brand=&barcode=&basis=g&energy=370&energy_unit=kcal&protein=13&carbs=60&fat=7&fiber=10",
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+        let loc = r.location.unwrap();
+        loc.trim_start_matches("/foods/")
+            .split('?')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    async fn day_kcal(&self, date: &str) -> String {
+        let r = self.get(&format!("/diary?date={date}")).await;
+        assert_eq!(r.status, StatusCode::OK);
+        let marker = "<p class=\"big-number\"><strong>";
+        let start = r.body.find(marker).expect("summary present") + marker.len();
+        r.body[start..].split('<').next().unwrap().to_string()
+    }
+}
+
+fn entry_id(db_rows: &[(i64,)]) -> i64 {
+    db_rows[0].0
+}
+
+#[tokio::test]
+async fn health_endpoints() {
+    let a = app().await;
+    assert_eq!(a.get("/healthz").await.status, StatusCode::OK);
+    let r = a.get("/readyz").await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body, "ready");
+}
+
+#[tokio::test]
+async fn first_run_goes_through_setup() {
+    let a = app().await;
+    let r = a.get("/").await;
+    assert_eq!(r.location.as_deref(), Some("/setup"));
+    assert_eq!(a.get("/diary").await.location.as_deref(), Some("/setup"));
+    assert_eq!(a.get("/setup").await.status, StatusCode::OK);
+
+    let bad = a
+        .post("/setup", "unit_system=metric&timezone=Nowhere%2FLand")
+        .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(bad.body.contains("time zone name"));
+
+    let r = a
+        .post("/setup", "unit_system=imperial&timezone=Europe%2FBerlin")
+        .await;
+    assert_eq!(r.location.as_deref(), Some("/goals?setup=1"));
+    assert_eq!(a.get("/").await.location.as_deref(), Some("/diary"));
+    let diary = a.get("/diary").await;
+    assert_eq!(diary.status, StatusCode::OK);
+    assert!(diary.body.contains("Add food"));
+    assert!(diary.body.contains("No daily target set"));
+}
+
+#[tokio::test]
+async fn security_headers_present() {
+    let a = app().await;
+    let res = a
+        .router
+        .clone()
+        .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let h = res.headers();
+    assert!(h.get(header::CONTENT_SECURITY_POLICY).is_some());
+    assert_eq!(h.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(), "nosniff");
+    assert_eq!(h.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+}
+
+#[tokio::test]
+async fn cross_site_posts_are_rejected() {
+    let a = app().await;
+    let cross_site = a
+        .send(
+            Request::post("/setup")
+                .header(header::HOST, "localhost")
+                .header("sec-fetch-site", "cross-site")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("unit_system=metric&timezone=UTC"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(cross_site.status, StatusCode::FORBIDDEN);
+
+    let wrong_origin = a
+        .send(
+            Request::post("/setup")
+                .header(header::HOST, "localhost")
+                .header(header::ORIGIN, "https://evil.example")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("unit_system=metric&timezone=UTC"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(wrong_origin.status, StatusCode::FORBIDDEN);
+
+    let p = korpus::profile::load(&a.db).await.unwrap();
+    assert!(!p.setup_complete, "rejected requests must not change data");
+}
+
+#[tokio::test]
+async fn manual_food_validation_and_creation() {
+    let a = app().await;
+    a.setup().await;
+    let bad = a
+        .post("/foods", "name=&basis=g&energy=-5&protein=abc&carbs=&fat=1")
+        .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(bad.body.contains("Enter a name."));
+    assert!(bad.body.contains("aria-invalid=\"true\""));
+    assert!(bad.body.contains("Please correct the following"));
+
+    let id = a.create_oats().await;
+    let detail = a.get(&format!("/foods/{id}")).await;
+    assert_eq!(detail.status, StatusCode::OK);
+    assert!(detail.body.contains("Rolled oats"));
+    assert!(detail.body.contains("Created by you"));
+    assert!(detail.body.contains("370 kcal"));
+
+    // Barcodes are unique when supplied.
+    let first = a
+        .post(
+            "/foods",
+            "name=A&basis=g&barcode=12345678&energy=1&protein=1&carbs=1&fat=1",
+        )
+        .await;
+    assert_eq!(first.status, StatusCode::SEE_OTHER);
+    let dup = a
+        .post(
+            "/foods",
+            "name=B&basis=g&barcode=12345678&energy=1&protein=1&carbs=1&fat=1",
+        )
+        .await;
+    assert_eq!(dup.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(dup.body.contains("already uses this barcode"));
+}
+
+#[tokio::test]
+async fn log_change_and_delete_entries() {
+    let a = app().await;
+    a.setup().await;
+    let food = a.create_oats().await;
+
+    let r = a
+        .post(
+            "/diary/entries",
+            &format!("food_id={food}&date=2026-03-10&meal=breakfast&amount=50"),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert!(r.location.unwrap().starts_with("/diary?date=2026-03-10"));
+    assert_eq!(a.day_kcal("2026-03-10").await, "185");
+    // Same food twice in one day is allowed.
+    a.post(
+        "/diary/entries",
+        &format!("food_id={food}&date=2026-03-10&meal=snacks&amount=10,5"),
+    )
+    .await;
+    assert_eq!(a.day_kcal("2026-03-10").await, "224");
+    // Other dates are unaffected.
+    assert_eq!(a.day_kcal("2026-03-11").await, "0");
+
+    let rows: Vec<(i64,)> = sqlx::query_as("SELECT id FROM diary_entries WHERE meal = 'breakfast'")
+        .fetch_all(&a.db)
+        .await
+        .unwrap();
+    let id = entry_id(&rows);
+
+    let invalid = a
+        .post(
+            &format!("/diary/entries/{id}"),
+            "date=2026-03-10&meal=breakfast&amount=0",
+        )
+        .await;
+    assert_eq!(invalid.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(invalid.body.contains("greater than zero"));
+
+    let r = a
+        .post(
+            &format!("/diary/entries/{id}"),
+            "date=2026-03-10&meal=lunch&amount=100",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(a.day_kcal("2026-03-10").await, "409");
+
+    let r = a.post(&format!("/diary/entries/{id}/delete"), "").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(a.day_kcal("2026-03-10").await, "39");
+    assert_eq!(
+        a.post(&format!("/diary/entries/{id}/delete"), "")
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn invalid_entry_input_is_rejected() {
+    let a = app().await;
+    a.setup().await;
+    let food = a.create_oats().await;
+    for body in [
+        format!("food_id={food}&date=2026-02-30&meal=lunch&amount=10"),
+        format!("food_id={food}&date=2026-02-01&meal=brunch&amount=10"),
+        format!("food_id={food}&date=2026-02-01&meal=lunch&amount=-1"),
+        format!("food_id={food}&date=2026-02-01&meal=lunch&amount=NaN"),
+        format!("food_id={food}&date=2026-02-01&meal=lunch&amount=99999"),
+    ] {
+        let r = a.post("/diary/entries", &body).await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    }
+    assert_eq!(
+        a.post(
+            "/diary/entries",
+            "food_id=999&date=2026-02-01&meal=lunch&amount=1"
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        a.get("/diary?date=not-a-date").await.status,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+#[tokio::test]
+async fn history_is_stable_when_food_changes_or_is_deleted() {
+    let a = app().await;
+    a.setup().await;
+    let food = a.create_oats().await;
+    a.post(
+        "/diary/entries",
+        &format!("food_id={food}&date=2026-01-05&meal=dinner&amount=100"),
+    )
+    .await;
+    assert_eq!(a.day_kcal("2026-01-05").await, "370");
+
+    let r = a
+        .post(
+            &format!("/foods/{food}"),
+            "name=Rolled+oats+v2&basis=g&energy=800&energy_unit=kcal&protein=1&carbs=1&fat=1",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    assert_eq!(
+        a.day_kcal("2026-01-05").await,
+        "370",
+        "edit must not rewrite history"
+    );
+    let day = a.get("/diary?date=2026-01-05").await;
+    assert!(
+        day.body.contains("Rolled oats<"),
+        "entry keeps the logged name"
+    );
+
+    let confirm = a.get(&format!("/foods/{food}/delete")).await;
+    assert!(confirm.body.contains("used in 1 diary entry"));
+    let r = a.post(&format!("/foods/{food}/delete"), "").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        a.get(&format!("/foods/{food}")).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        a.day_kcal("2026-01-05").await,
+        "370",
+        "delete must not rewrite history"
+    );
+}
+
+#[tokio::test]
+async fn weight_log_and_units() {
+    let a = app().await;
+    a.post("/setup", "unit_system=imperial&timezone=UTC").await;
+
+    let r = a
+        .post("/weight", "date=2026-01-01&weight=200&note=start")
+        .await;
+    assert_eq!(r.location.as_deref(), Some("/weight?msg=weight_saved"));
+    let kg: f64 = sqlx::query_scalar("SELECT weight_kg FROM weight_entries")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert!((kg - 90.718474).abs() < 1e-6, "stored canonically in kg");
+
+    let r = a.post("/weight", "date=2026-01-01&weight=199,5").await;
+    assert_eq!(r.location.as_deref(), Some("/weight?msg=weight_replaced"));
+    a.post("/weight", "date=2026-01-08&weight=198").await;
+
+    let page = a.get("/weight").await;
+    assert!(page.body.contains("199.5"));
+    assert!(
+        page.body.contains("<svg"),
+        "chart rendered with two entries"
+    );
+    assert!(page.body.contains("-1.5"));
+
+    for bad in [
+        "date=2026-01-02&weight=0",
+        "date=2026-01-02&weight=abc",
+        "date=x&weight=150",
+    ] {
+        assert_eq!(
+            a.post("/weight", bad).await.status,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM weight_entries ORDER BY entry_date")
+        .fetch_all(&a.db)
+        .await
+        .unwrap();
+    let clash = a
+        .post(&format!("/weight/{}", ids[0]), "date=2026-01-08&weight=150")
+        .await;
+    assert_eq!(clash.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(clash.body.contains("already a weight for this date"));
+
+    let r = a.post(&format!("/weight/{}/delete", ids[0]), "").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM weight_entries")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn goals_estimate_custom_and_safety() {
+    let a = app().await;
+    a.setup().await;
+
+    let r = a
+        .post(
+            "/goals",
+            "target_mode=estimate&sex=male&birth_date=1990-01-01&height=180&weight=80&activity=sedentary&goal=maintain",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.target_source.as_deref(), Some("estimate"));
+    assert!(g.daily_kcal_target.unwrap() > 1500.0);
+    assert!(a.get("/diary").await.body.contains("remaining"));
+
+    // Logging a new weight does not silently change the target.
+    let before = g.daily_kcal_target;
+    a.post("/weight", "date=2026-01-01&weight=70").await;
+    assert_eq!(
+        korpus::goals::load(&a.db).await.unwrap().daily_kcal_target,
+        before
+    );
+
+    let missing = a.post("/goals", "target_mode=estimate&goal=lose").await;
+    assert_eq!(missing.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let minor = a
+        .post(
+            "/goals",
+            "target_mode=estimate&sex=female&birth_date=2015-01-01&height=150&weight=45&activity=light&goal=lose",
+        )
+        .await;
+    assert_eq!(minor.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(minor.body.contains("under 18"));
+
+    let unsafe_target = a
+        .post("/goals", "target_mode=custom&custom_target=300")
+        .await;
+    assert_eq!(unsafe_target.status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    let low = a
+        .post("/goals", "target_mode=custom&custom_target=1000")
+        .await;
+    assert_eq!(low.status, StatusCode::OK);
+    assert!(low.body.contains("below 1200 kcal"));
+
+    let none = a.post("/goals", "target_mode=none&protein_goal=120").await;
+    assert_eq!(none.status, StatusCode::SEE_OTHER);
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.daily_kcal_target, None);
+    assert_eq!(g.protein_goal_g, Some(120.0));
+}
+
+#[tokio::test]
+async fn search_local_and_remote_with_import() {
+    let a = app().await;
+    a.setup().await;
+    a.create_oats().await;
+
+    let page = a.get("/search?q=oats").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("Rolled oats"));
+    assert!(page.body.contains("data-src=\"/search/remote?q=oats"));
+
+    // Saved foods and database results form a single list.
+    let both = a.get("/search?q=oats&remote=1").await;
+    assert_eq!(both.body.matches("<ul class=\"results\"").count(), 1);
+    let list = &both.body[both.body.find("id=\"result-list\"").unwrap()..];
+    let list = &list[..list.find("</ul>").unwrap()];
+    assert!(list.contains("Rolled oats") && list.contains("Remote oats"));
+    assert!(
+        list.find("Rolled oats") < list.find("Remote oats"),
+        "saved foods first"
+    );
+
+    // Accent folding and partial matches.
+    let page = a.get("/search?q=ROLL").await;
+    assert!(page.body.contains("Rolled oats"));
+    let none = a.get("/search?q=zzzz").await;
+    assert!(none.body.contains("No results."));
+    assert!(none.body.contains("/foods/new?name=zzzz"));
+
+    // Without the fetch header the fragment URL falls back to the full page.
+    let r = a.get("/search/remote?q=granola").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let inline = a
+        .get("/search?q=granola&remote=1&date=2026-04-01&meal=lunch")
+        .await;
+    assert!(inline.body.contains("Remote granola"));
+    assert!(inline.body.contains("Fake attribution."));
+    assert!(
+        inline.body.contains("Missing: Fat"),
+        "missing values are flagged"
+    );
+
+    let r = a
+        .post(
+            "/foods/import",
+            "source=openfoodfacts&provider_id=4000000000017&date=2026-04-01&meal=lunch",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let loc = r.location.unwrap();
+    assert!(loc.contains("date=2026-04-01&meal=lunch"), "{loc}");
+    let detail = a.get(&loc).await;
+    assert!(detail.body.contains("Remote granola"));
+    assert!(detail.body.contains("Missing values: Fat"));
+    assert!(detail.body.contains("Open Food Facts"));
+
+    // Importing again reuses the same local food.
+    let again = a
+        .post(
+            "/foods/import",
+            "source=openfoodfacts&provider_id=4000000000017",
+        )
+        .await;
+    assert_eq!(
+        again.location.unwrap().split('?').next(),
+        loc.split('?').next()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM foods")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
+
+    // Already-imported products are listed once, as the saved food.
+    let inline = a.get("/search?q=granola&remote=1").await;
+    assert!(inline.body.contains("Remote granola"));
+    assert!(!inline.body.contains("value=\"4000000000017\""));
+
+    // Exact barcode search finds the local food.
+    let by_code = a.get("/search?q=4000000000017").await;
+    assert!(by_code.body.contains("Remote granola"));
+}
+
+#[tokio::test]
+async fn provider_outage_degrades_gracefully() {
+    let a = app().await;
+    a.setup().await;
+    a.create_oats().await;
+    *a.provider.fail.lock().unwrap() = true;
+
+    let page = a.get("/search?q=oats&remote=1").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(
+        page.body.contains("Rolled oats"),
+        "local results still shown"
+    );
+    assert!(page.body.contains("could not be searched"));
+    assert!(page.body.contains("Your own foods still work."));
+
+    let r = a
+        .post(
+            "/foods/import",
+            "source=openfoodfacts&provider_id=4000000000017",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_GATEWAY);
+    assert!(r.body.contains("Create food manually"));
+
+    let unknown = a.post("/foods/import", "source=nope&provider_id=1").await;
+    assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn export_import_round_trip_and_backup() {
+    let a = app().await;
+    a.setup().await;
+    let food = a.create_oats().await;
+    a.post(
+        "/diary/entries",
+        &format!("food_id={food}&date=2026-05-01&meal=lunch&amount=80"),
+    )
+    .await;
+    a.post("/weight", "date=2026-05-01&weight=72").await;
+    a.post("/goals", "target_mode=custom&custom_target=2100")
+        .await;
+
+    let export = a.get("/settings/export.json").await;
+    assert_eq!(export.status, StatusCode::OK);
+    let csv = a.get("/settings/diary.csv").await;
+    assert!(csv.body.starts_with("date,meal,food"));
+    assert!(csv.body.contains("2026-05-01,lunch,Rolled oats"));
+
+    let parsed: korpus::backup::Export = serde_json::from_str(&export.body).unwrap();
+    let b = app().await;
+    let summary = korpus::backup::import(&b.db, &parsed, Lang::En)
+        .await
+        .unwrap();
+    assert_eq!(summary.foods, 1);
+    assert_eq!(summary.diary_entries, 1);
+    assert_eq!(summary.weight_entries, 1);
+    assert_eq!(b.day_kcal("2026-05-01").await, "296");
+    assert_eq!(
+        korpus::goals::load(&b.db).await.unwrap().daily_kcal_target,
+        Some(2100.0)
+    );
+
+    // Importing into a non-empty installation is refused and changes nothing.
+    assert!(
+        korpus::backup::import(&b.db, &parsed, Lang::En)
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM diary_entries")
+        .fetch_one(&b.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn invalid_import_is_rejected_atomically() {
+    let a = app().await;
+    a.setup().await;
+    let food = a.create_oats().await;
+    a.post(
+        "/diary/entries",
+        &format!("food_id={food}&date=2026-05-01&meal=lunch&amount=80"),
+    )
+    .await;
+    let mut export = korpus::backup::export(&a.db).await.unwrap();
+    export.diary_entries[0].amount = -3.0;
+
+    let b = app().await;
+    let err = korpus::backup::import(&b.db, &export, Lang::En)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("invalid"));
+    let foods: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM foods")
+        .fetch_one(&b.db)
+        .await
+        .unwrap();
+    assert_eq!(foods, 0);
+}
+
+#[tokio::test]
+async fn local_search_ranks_exact_matches_first() {
+    let a = app().await;
+    for name in ["Apple juice", "Pineapple", "Apple", "Apple pie"] {
+        a.post(
+            "/foods",
+            &format!(
+                "name={}&basis=g&energy=50&protein=0&carbs=12&fat=0",
+                name.replace(' ', "+")
+            ),
+        )
+        .await;
+    }
+    let page = korpus::foods::search(&a.db, "apple", 1, Lang::En)
+        .await
+        .unwrap();
+    let names: Vec<&str> = page.foods.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names[0], "Apple");
+    assert_eq!(names.last(), Some(&"Pineapple"));
+    assert_eq!(names.len(), 4);
+    // Punctuation never reaches LIKE: it is stripped by normalization.
+    let partial = korpus::foods::search(&a.db, "pple_", 1, Lang::En)
+        .await
+        .unwrap();
+    assert_eq!(partial.foods.len(), 4);
+}
+
+#[tokio::test]
+async fn unknown_routes_and_ids_return_not_found() {
+    let a = app().await;
+    a.setup().await;
+    assert_eq!(a.get("/nope").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(a.get("/foods/abc").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(a.get("/foods/0").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        a.get("/diary/entries/5/edit").await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn sqlite_backup_of_file_database() {
+    let dir = std::env::temp_dir().join(format!("korpus-test-{}", std::process::id()));
+    let path = dir.join("nested").join("korpus.db");
+    let url = format!("sqlite://{}", path.display());
+    let db = korpus::db::connect(&url).await.unwrap();
+    assert!(path.exists(), "parent directories and database are created");
+    sqlx::query("INSERT INTO weight_entries (entry_date, weight_kg) VALUES ('2026-01-01', 70)")
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let bytes = korpus::backup::sqlite_snapshot(&db).await.unwrap();
+    assert!(bytes.starts_with(b"SQLite format 3\0"));
+
+    // The snapshot is a complete database that opens with migrations already applied.
+    let restored = dir.join("restored.db");
+    std::fs::write(&restored, &bytes).unwrap();
+    let db2 = korpus::db::connect(&format!("sqlite://{}", restored.display()))
+        .await
+        .unwrap();
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM weight_entries")
+        .fetch_one(&db2)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+
+    // Reopening an existing database never loses data.
+    db.close().await;
+    let db = korpus::db::connect(&url).await.unwrap();
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM weight_entries")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(n, 1);
+    db.close().await;
+    db2.close().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn interface_follows_browser_until_a_language_is_chosen() {
+    let a = app().await;
+    a.setup().await;
+    let get_with_lang = |accept: &'static str| {
+        Request::get("/diary?date=2026-10-22")
+            .header(header::HOST, "localhost")
+            .header(header::ACCEPT_LANGUAGE, accept)
+            .body(Body::empty())
+            .unwrap()
+    };
+
+    let es = a.send(get_with_lang("es-ES,es;q=0.9")).await;
+    assert!(es.body.contains("<html lang=\"es\">"));
+    assert!(es.body.contains("Desayuno"));
+    assert!(es.body.contains("jueves, 22 de octubre de 2026"));
+    let en = a.get("/diary?date=2026-10-22").await;
+    assert!(en.body.contains("<html lang=\"en\">"));
+    assert!(en.body.contains("Breakfast"));
+
+    // A chosen language wins over the browser.
+    let r = a
+        .post("/settings", "unit_system=metric&timezone=UTC&language=fr")
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let fr = a.send(get_with_lang("es-ES,es;q=0.9")).await;
+    assert!(fr.body.contains("<html lang=\"fr\">"));
+    assert!(fr.body.contains("Petit-déjeuner"));
+    assert!(fr.body.contains("jeudi 22 octobre 2026"));
+    let settings = a.get("/settings?msg=settings_saved").await;
+    assert!(settings.body.contains("Paramètres enregistrés."));
+    assert!(
+        settings
+            .body
+            .contains("<option value=\"fr\" lang=\"fr\" selected>")
+    );
+
+    // Back to following the browser.
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=")
+        .await;
+    let es = a.send(get_with_lang("es")).await;
+    assert!(es.body.contains("<html lang=\"es\">"));
+}
+
+#[tokio::test]
+async fn invalid_language_and_errors_are_localized() {
+    let a = app().await;
+    a.setup().await;
+    let r = a
+        .post("/settings", "unit_system=metric&timezone=UTC&language=de")
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("Choose a language."));
+
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=es")
+        .await;
+    let r = a.post("/foods", "name=&basis=g&energy=abc").await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("Introduzca un nombre."));
+    assert!(r.body.contains("Energía: debe ser un número."));
+    let missing = a.get("/foods/999999").await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+    assert!(missing.body.contains("No encontrado"));
+}
+
+#[tokio::test]
+async fn food_is_searched_in_the_interface_language_not_translated() {
+    let a = app().await;
+    a.setup().await;
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=fr")
+        .await;
+
+    let page = a.get("/search?q=granola&remote=1").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(*a.provider.last_lang.lock().unwrap(), Some(Lang::Fr));
+
+    let r = a
+        .post(
+            "/foods/import",
+            "source=openfoodfacts&provider_id=4000000000017",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let detail = a.get(&r.location.unwrap()).await;
+    assert!(
+        detail.body.contains("Granola croustillant"),
+        "the provider's French name is stored, not a translation"
+    );
+    assert!(detail.body.contains("Valeurs manquantes"));
+
+    // Names the user typed are never translated.
+    let id = a.create_oats().await;
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=es")
+        .await;
+    let oats = a.get(&format!("/foods/{id}")).await;
+    assert!(oats.body.contains("Rolled oats"));
+    assert!(oats.body.contains("Añadir al diario"));
+}
+
+#[tokio::test]
+async fn saved_products_follow_the_interface_language() {
+    let a = app().await;
+    a.setup().await;
+    let set_lang = |code: &'static str| {
+        let a = &a;
+        async move {
+            let r = a
+                .post(
+                    "/settings",
+                    &format!("unit_system=metric&timezone=UTC&language={code}"),
+                )
+                .await;
+            assert_eq!(r.status, StatusCode::SEE_OTHER);
+        }
+    };
+
+    set_lang("fr").await;
+    let r = a
+        .post(
+            "/foods/import",
+            "source=openfoodfacts&provider_id=4000000000017",
+        )
+        .await;
+    let loc = r.location.unwrap();
+    let food_url = loc.split('?').next().unwrap().to_string();
+    let id: i64 = food_url.trim_start_matches("/foods/").parse().unwrap();
+    let r = a
+        .post(
+            "/diary/entries",
+            &format!("food_id={id}&amount=40&meal=breakfast&date=2026-10-22"),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+
+    // Switching language shows the provider's own Spanish name everywhere.
+    set_lang("es").await;
+    assert!(a.get(&food_url).await.body.contains("Granola crujiente"));
+    let diary = a.get("/diary?date=2026-10-22").await;
+    assert!(diary.body.contains("Granola crujiente"));
+    assert!(!diary.body.contains("Granola croustillant"));
+    // Search matches every language's name and lists the Spanish one.
+    let found = a.get("/search?q=croustillant").await;
+    assert!(found.body.contains("Granola crujiente"));
+    set_lang("en").await;
+    assert!(a.get(&food_url).await.body.contains("Remote granola"));
+
+    // Backups keep the names.
+    let export = korpus::backup::export(&a.db).await.unwrap();
+    assert_eq!(export.foods[0].names.len(), 3);
+
+    // Saving without renaming keeps them; a new name is used in every language.
+    let form = |name: &str| {
+        format!("name={name}&basis=g&energy=400&energy_unit=kcal&protein=8&carbs=70&fat=1")
+    };
+    a.post(&food_url, &form("Remote+granola")).await;
+    set_lang("fr").await;
+    assert!(a.get(&food_url).await.body.contains("Granola croustillant"));
+    let r = a.post(&food_url, &form("Mon+granola")).await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    set_lang("es").await;
+    assert!(a.get(&food_url).await.body.contains("Mon granola"));
+    assert!(
+        a.get("/search?q=granola")
+            .await
+            .body
+            .contains("Mon granola")
+    );
+}
+
+#[tokio::test]
+async fn products_saved_before_names_existed_catch_up_in_search() {
+    let a = app().await;
+    a.setup().await;
+    a.post(
+        "/foods/import",
+        "source=openfoodfacts&provider_id=4000000000017",
+    )
+    .await;
+    sqlx::query("DELETE FROM food_names")
+        .execute(&a.db)
+        .await
+        .unwrap();
+
+    // The fake search does not return this product, but a barcode lookup does.
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=fr")
+        .await;
+    let page = a.get("/search?q=4000000000017&remote=1").await;
+    assert_eq!(page.status, StatusCode::OK);
+    let names: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM food_names")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(names, 3);
+    let again = a.get("/search?q=4000000000017").await;
+    assert!(again.body.contains("Granola croustillant"));
+}

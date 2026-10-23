@@ -1,0 +1,23 @@
+<div class="field">
+  <label for="language">{{ lang.t("Language") }}</label>
+  <select id="language" name="language" aria-describedby="language-hint{% if errors.has("language") %} language-error{% endif %}" {% if errors.has("language") %}aria-invalid="true"{% endif %}>
+    {% for o in languages %}<option value="{{ o.code }}"{% if !o.code.is_empty() %} lang="{{ o.code }}"{% endif %}{% if form.language == o.code %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+  </select>
+  <p class="hint" id="language-hint">{{ lang.t("Also the language in which food databases are searched and product names are shown.") }}</p>
+  {% if let Some(e) = errors.get("language") %}<p class="field-error" id="language-error">{{ e }}</p>{% endif %}
+</div>
+<fieldset id="unit_system">
+  <legend>{{ lang.t("Units for body weight and height") }}</legend>
+  <div class="radios">
+    <label><input type="radio" name="unit_system" value="metric"{% if form.unit_system == "metric" %} checked{% endif %}> {{ lang.t("Metric (kg, cm)") }}</label>
+    <label><input type="radio" name="unit_system" value="imperial"{% if form.unit_system == "imperial" %} checked{% endif %}> {{ lang.t("Imperial (lb, in)") }}</label>
+  </div>
+  <p class="hint">{{ lang.t("Food amounts always use grams or millilitres, as on nutrition labels.") }}</p>
+  {% if let Some(e) = errors.get("unit_system") %}<p class="field-error">{{ e }}</p>{% endif %}
+</fieldset>
+<div class="field">
+  <label for="timezone">{{ lang.t("Time zone") }}</label>
+  <input type="text" id="timezone" name="timezone" value="{{ form.timezone }}" required autocomplete="off" spellcheck="false" data-detect-timezone aria-describedby="timezone-hint{% if errors.has("timezone") %} timezone-error{% endif %}" {% if errors.has("timezone") %}aria-invalid="true"{% endif %}>
+  <p class="hint" id="timezone-hint">{{ lang.t("Decides when a new diary day starts, e.g. Europe/Berlin or America/Chicago.") }}</p>
+  {% if let Some(e) = errors.get("timezone") %}<p class="field-error" id="timezone-error">{{ e }}</p>{% endif %}
+</div>

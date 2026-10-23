@@ -1,0 +1,21 @@
+# Start: docker compose up -d   ·   Open: http://localhost:9874
+services:
+  korpus:
+    build: .
+    image: korpus:latest
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KORPUS_BIND: 0.0.0.0:9874
+      KORPUS_DATABASE_URL: sqlite:///data/korpus.db
+    # Published on localhost only. Korpus has no login: put it behind a
+    # reverse proxy with authentication before exposing it (see README).
+    ports:
+      - "127.0.0.1:9874:9874"
+    volumes:
+      - korpus-data:/data
+
+volumes:
+  korpus-data:

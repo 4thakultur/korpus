@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/weight">← {{ lang.t("Back to weight") }}</a></p>
+<h1>{{ lang.t("Edit weight") }}</h1>
+{% include "_errors.html" %}
+<form method="post" action="/weight/{{ id }}" class="stack">
+  <div class="field-row">
+    <div class="field">
+      <label for="weight">{{ lang.f1("Weight ({0})", unit) }}</label>
+      <input type="text" id="weight" name="weight" value="{{ weight }}" inputmode="decimal" required autocomplete="off" {% if errors.has("weight") %}aria-invalid="true" aria-describedby="weight-error"{% endif %}>
+      {% if let Some(e) = errors.get("weight") %}<p class="field-error" id="weight-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label for="date">{{ lang.t("Date") }}</label>
+      <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+      {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
+    </div>
+  </div>
+  <div class="field">
+    <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+    <input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off">
+    {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+  </div>
+  <ul class="actions">
+    <li><button type="submit" class="primary">{{ lang.t("Save") }}</button></li>
+    <li><a class="button" href="/weight">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+<form method="post" action="/weight/{{ id }}/delete" data-confirm="{{ lang.t("Delete this weight entry?") }}">
+  <button type="submit" class="danger">{{ lang.t("Delete entry") }}</button>
+</form>
+{% endblock %}

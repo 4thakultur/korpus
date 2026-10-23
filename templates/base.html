@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="{{ lang.code() }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{ title }} · Korpus</title>
+<link rel="stylesheet" href="/static/app.css?v={{ crate::web::ASSET_VERSION }}">
+<script src="/static/app.js?v={{ crate::web::ASSET_VERSION }}" defer></script>
+</head>
+<body data-t-remote-error="{{ lang.t("External results could not be loaded. Your own foods are still available above.") }}"
+      data-t-this-amount="{{ lang.t("This amount:") }}"
+      data-t-p="{{ lang.t("P") }}" data-t-c="{{ lang.t("C") }}" data-t-f="{{ lang.t("F") }}"
+      data-decimal="{{ lang.decimal_separator() }}">
+<a class="skip-link" href="#main">{{ lang.t("Skip to content") }}</a>
+<header class="site-header">
+  <a class="brand" href="/">Korpus</a>
+  {% if !nav.is_empty() %}
+  <nav aria-label="{{ lang.t("Main") }}">
+    <ul>
+      <li><a href="/diary"{% if nav == "diary" %} aria-current="page"{% endif %}>{{ lang.t("Diary") }}</a></li>
+      <li><a href="/search"{% if nav == "foods" %} aria-current="page"{% endif %}>{{ lang.t("Foods") }}</a></li>
+      <li><a href="/weight"{% if nav == "weight" %} aria-current="page"{% endif %}>{{ lang.t("Weight") }}</a></li>
+      <li><a href="/goals"{% if nav == "goals" %} aria-current="page"{% endif %}>{{ lang.t("Goals") }}</a></li>
+      <li><a href="/settings"{% if nav == "settings" %} aria-current="page"{% endif %}>{{ lang.t("Settings") }}</a></li>
+    </ul>
+  </nav>
+  {% endif %}
+</header>
+<main id="main" tabindex="-1">
+{% block content %}{% endblock %}
+</main>
+<footer class="site-footer">
+  <p>{{ lang.t("Korpus keeps your data on this server. Calorie estimates are approximate and not medical advice.") }}</p>
+</footer>
+</body>
+</html>

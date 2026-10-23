@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="{{ back_url }}">← {{ lang.t("Back to diary") }}</a></p>
+<h1>{{ lang.t("Edit entry") }}</h1>
+<p><strong>{{ name }}</strong>{% if !brand.is_empty() %} · {{ brand }}{% endif %}<br>
+<span class="subtle">{{ source_label }} · {{ lang.f1("logged values per 100 {0}:", unit) }} {{ per100_kcal }} kcal, {{ lang.t("P") }} {{ per100_protein }} g, {{ lang.t("C") }} {{ per100_carbs }} g, {{ lang.t("F") }} {{ per100_fat }} g</span>
+{% if let Some(u) = food_url %}<br><a href="{{ u }}">{{ lang.t("View food") }}</a>{% endif %}</p>
+{% include "_errors.html" %}
+<form method="post" action="/diary/entries/{{ id }}" class="stack"
+      data-nutrients data-kcal="{{ data_kcal }}" data-protein="{{ data_protein }}" data-carbs="{{ data_carbs }}" data-fat="{{ data_fat }}">
+  <div class="field">
+    <label for="amount">{{ lang.f1("Amount ({0})", unit) }}</label>
+    <div class="input-unit">
+      <input type="text" id="amount" name="amount" value="{{ amount }}" inputmode="decimal" required autocomplete="off" {% if errors.has("amount") %}aria-invalid="true" aria-describedby="amount-error"{% endif %}>
+      <span aria-hidden="true">{{ unit }}</span>
+    </div>
+    {% if let Some(e) = errors.get("amount") %}<p class="field-error" id="amount-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="field-row">
+    <div class="field">
+      <label for="meal">{{ lang.t("Meal") }}</label>
+      <select id="meal" name="meal">
+        {% for m in meals %}<option value="{{ m.as_str() }}"{% if m.as_str() == meal %} selected{% endif %}>{{ m.label(*lang) }}</option>{% endfor %}
+      </select>
+      {% if let Some(e) = errors.get("meal") %}<p class="field-error" id="meal-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="field">
+      <label for="date">{{ lang.t("Date") }}</label>
+      <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+      {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
+    </div>
+  </div>
+  <p class="preview" aria-live="polite" data-preview hidden></p>
+  <ul class="actions">
+    <li><button type="submit" class="primary">{{ lang.t("Save") }}</button></li>
+    <li><a class="button" href="{{ back_url }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+<form method="post" action="/diary/entries/{{ id }}/delete" data-confirm="{{ lang.t("Delete this entry?") }}">
+  <button type="submit" class="danger">{{ lang.t("Delete entry") }}</button>
+</form>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% let r = item.row %}
+<li>
+{% if let Some(u) = item.url %}
+  <a class="result" href="{{ u }}">{% include "_result_row.html" %}</a>
+{% else %}
+  <form method="post" action="/foods/import" class="result-form">
+    <input type="hidden" name="source" value="{{ item.source }}">
+    <input type="hidden" name="provider_id" value="{{ item.provider_id }}">
+    <input type="hidden" name="date" value="{{ ctx.date_str() }}">
+    <input type="hidden" name="meal" value="{{ ctx.meal_str() }}">
+    <button type="submit" class="result">{% include "_result_row.html" %}<span class="visually-hidden"> — {{ lang.t("select") }}</span></button>
+  </form>
+{% endif %}
+</li>

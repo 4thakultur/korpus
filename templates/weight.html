@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_flash.html" %}
+<h1>{{ lang.t("Weight") }}</h1>
+<section class="card" aria-labelledby="record-heading">
+  <h2 id="record-heading">{{ lang.t("Record weight") }}</h2>
+  {% include "_errors.html" %}
+  <form method="post" action="/weight" class="stack">
+    <div class="field-row">
+      <div class="field">
+        <label for="weight">{{ lang.f1("Weight ({0})", unit) }}</label>
+        <div class="input-unit">
+          <input type="text" id="weight" name="weight" value="{{ weight }}" inputmode="decimal" required autocomplete="off" {% if errors.has("weight") %}aria-invalid="true" aria-describedby="weight-error"{% endif %}>
+          <span aria-hidden="true">{{ unit }}</span>
+        </div>
+        {% if let Some(e) = errors.get("weight") %}<p class="field-error" id="weight-error">{{ e }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label for="date">{{ lang.t("Date") }}</label>
+        <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+        {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
+      </div>
+    </div>
+    <div class="field">
+      <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off" {% if errors.has("note") %}aria-invalid="true" aria-describedby="note-error"{% endif %}>
+      {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+    </div>
+    <p class="hint">{{ lang.t("One entry per day; recording again for the same date replaces it. Your calorie target does not change automatically.") }}</p>
+    <button type="submit" class="primary">{{ lang.t("Save weight") }}</button>
+  </form>
+</section>
+
+{% if let Some(c) = chart %}
+<section class="card" aria-labelledby="trend-heading">
+  <h2 id="trend-heading">{{ lang.t("Trend") }}</h2>
+  <figure class="chart">
+    <svg viewBox="0 0 {{ c.width }} {{ c.height }}" role="img" aria-labelledby="chart-title chart-desc" preserveAspectRatio="xMidYMid meet">
+      <title id="chart-title">{{ lang.f1("Weight trend in {0}", unit) }}</title>
+      <desc id="chart-desc">{{ c.summary }}</desc>
+      {% for t in c.y_ticks %}
+      <line class="grid" x1="{{ c.plot_left }}" x2="{{ c.plot_right }}" y1="{{ t.pos }}" y2="{{ t.pos }}"></line>
+      <text class="tick" x="{{ c.plot_left - 6 }}" y="{{ t.pos }}" text-anchor="end" dominant-baseline="middle">{{ t.label }}</text>
+      {% endfor %}
+      {% for t in c.x_ticks %}
+      <text class="tick" x="{{ t.pos }}" y="{{ c.plot_bottom + 22 }}" text-anchor="{% if loop.first %}start{% else %}end{% endif %}">{{ t.label }}</text>
+      {% endfor %}
+      <polyline class="line" points="{{ c.points }}"></polyline>
+      {% for d in c.dots %}
+      <circle class="dot" cx="{{ d.x }}" cy="{{ d.y }}" r="3.5"><title>{{ d.label }}</title></circle>
+      {% endfor %}
+    </svg>
+    <figcaption>{{ c.summary }} {{ lang.t("The table below lists every entry.") }}</figcaption>
+  </figure>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="history-heading">
+  <h2 id="history-heading">{{ lang.t("History") }}</h2>
+  {% if rows.is_empty() %}
+    <p class="subtle">{{ lang.t("No weights recorded yet.") }}</p>
+  {% else %}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">{{ lang.t("Date") }}</th><th scope="col">{{ lang.f1("Weight ({0})", unit) }}</th><th scope="col">{{ lang.t("Change") }}</th><th scope="col">{{ lang.t("Note") }}</th><th scope="col"><span class="visually-hidden">{{ lang.t("Actions") }}</span></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <th scope="row"><time datetime="{{ r.date }}">{{ r.date_label }}</time></th>
+        <td>{{ r.weight }}</td>
+        <td>{{ r.change }}</td>
+        <td>{{ r.note }}</td>
+        <td><a href="/weight/{{ r.id }}/edit">{{ lang.t("Edit") }}<span class="visually-hidden"> {{ r.date_label }}</span></a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

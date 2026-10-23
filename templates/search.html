@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_flash.html" %}
+<h1>{{ title }}</h1>
+{% if let Some(d) = ctx.date %}<p class="subtle">{% if ctx.meal.is_some() %}{{ lang.f2("Logging for {0} · {1}.", ctx.date_label(*lang), ctx.meal_label(*lang)) }}{% else %}{{ lang.f1("Logging for {0}.", ctx.date_label(*lang)) }}{% endif %} <a href="/diary?date={{ d }}">{{ lang.t("Back to diary") }}</a></p>{% endif %}
+
+<form method="get" action="/search" role="search" class="search-form" data-live-search>
+  <label for="q">{{ lang.t("Search foods by name, brand or barcode") }}</label>
+  <div class="search-row">
+    <input type="search" id="q" name="q" value="{{ q }}" maxlength="100" autocomplete="off" autofocus inputmode="search">
+    <button type="submit" class="primary" name="remote" value="1">{{ lang.t("Search") }}</button>
+  </div>
+  {% if ctx.date.is_some() %}<input type="hidden" name="date" value="{{ ctx.date_str() }}">{% endif %}
+  {% if ctx.meal.is_some() %}<input type="hidden" name="meal" value="{{ ctx.meal_str() }}">{% endif %}
+</form>
+
+<section aria-labelledby="results-heading" id="results" aria-live="polite" aria-busy="false"{% if let Some(src) = pending_src %} data-src="{{ src }}"{% endif %}>
+  <h2 id="results-heading"{% if !q.is_empty() %} class="visually-hidden"{% endif %}>{% if q.is_empty() %}{{ lang.t("Your foods") }}{% else %}{{ lang.t("Results") }}{% endif %}</h2>
+  <ul class="results" id="result-list">
+    {% for item in items %}{% include "_result_item.html" %}{% endfor %}
+  </ul>
+  {% if pending_src.is_some() %}<p class="js-only loading" id="results-loading">{{ lang.t("Searching food databases…") }}</p>{% endif %}
+  <p class="subtle" id="no-results"{% if !items.is_empty() || pending_src.is_some() %} hidden{% endif %}>{% if q.is_empty() %}{{ lang.t("You have not saved any foods yet.") }}{% else %}{{ lang.t("No results.") }}{% endif %}</p>
+  <div id="results-errors">{% for e in errors %}<p class="warning" role="alert"><span aria-hidden="true">⚠</span> {{ e }} {{ lang.t("Your own foods still work.") }}</p>{% endfor %}</div>
+  {% if prev_url.is_some() || next_url.is_some() || next_if_more_url.is_some() %}
+  <nav class="pager" aria-label="{{ lang.t("Result pages") }}">
+    {% if let Some(u) = prev_url %}<a href="{{ u }}">← {{ lang.t("Previous") }}</a>{% endif %}
+    {% if let Some(u) = next_url %}<a href="{{ u }}">{{ lang.t("Next") }} →</a>{% endif %}
+    {% if let Some(u) = next_if_more_url %}<a href="{{ u }}" id="next-if-more" hidden>{{ lang.t("Next") }} →</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% for a in attributions %}<p class="attribution">{{ a.text }} <a href="{{ a.url }}" rel="noopener noreferrer">{{ a.url }}</a></p>{% endfor %}
+</section>
+
+<section class="card" aria-labelledby="create-heading">
+  <h2 id="create-heading">{{ lang.t("Can't find it?") }}</h2>
+  <p>{{ lang.t("Create the food yourself using the values from its nutrition label.") }}</p>
+  <p><a class="button" href="{{ create_url }}">{{ lang.t("Create a food") }}</a></p>
+</section>
+{% endblock %}

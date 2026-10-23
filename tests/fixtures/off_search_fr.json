@@ -1,0 +1,30 @@
+{
+  "hits": [
+    {
+      "code": "3270190000017",
+      "lang": "fr",
+      "product_name": "Natural yogurt",
+      "product_name_fr": "Yaourt nature",
+      "brands": ["Exemple"],
+      "quantity": "4 x 125 g",
+      "nutriments": {
+        "energy-kcal_100g": 58,
+        "proteins_100g": 4.1,
+        "carbohydrates_100g": 5.2,
+        "fat_100g": 2.1
+      }
+    },
+    {
+      "code": "4000000000033",
+      "lang": "de",
+      "product_name": "Joghurt Natur",
+      "product_name_fr": "",
+      "nutriments": {
+        "energy-kcal_100g": 61
+      }
+    }
+  ],
+  "page": 1,
+  "page_size": 20,
+  "page_count": 1
+}

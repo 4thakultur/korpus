@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p role="alert">{{ message }}</p>
+<ul class="actions">
+{% for (label, url) in links %}
+  <li><a class="button{% if loop.first %} primary{% endif %}" href="{{ url }}">{{ label }}</a></li>
+{% endfor %}
+</ul>
+{% endblock %}

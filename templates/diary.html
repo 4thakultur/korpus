@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_flash.html" %}
+<div class="day-nav">
+  <a class="button" href="/diary?date={{ prev_iso }}" rel="prev" aria-label="{{ lang.t("Previous day") }}"><span aria-hidden="true">←</span> {{ lang.t("Previous") }}</a>
+  <form method="get" action="/diary" class="date-jump">
+    <label for="date" class="visually-hidden">{{ lang.t("Diary date") }}</label>
+    <input type="date" id="date" name="date" value="{{ date_iso }}" required data-autosubmit>
+    <button type="submit" class="js-hidden">{{ lang.t("Go") }}</button>
+  </form>
+  <a class="button" href="/diary?date={{ next_iso }}" rel="next" aria-label="{{ lang.t("Next day") }}">{{ lang.t("Next") }} <span aria-hidden="true">→</span></a>
+</div>
+<h1>{% if is_today %}{{ lang.t("Today") }} <span class="subtle">{{ date_label }}</span>{% else %}{{ date_label }}{% endif %}</h1>
+{% if !is_today %}<p><a href="/diary?date={{ today_iso }}">{{ lang.t("Back to today") }}</a></p>{% endif %}
+
+<section class="summary card" aria-labelledby="summary-heading">
+  <h2 id="summary-heading" class="visually-hidden">{{ lang.t("Daily summary") }}</h2>
+  <div class="summary-energy">
+    {% if let Some(t) = target %}
+      <p class="big-number"><strong>{{ consumed }}</strong> {{ lang.f1("of {0} kcal", t) }}</p>
+      <progress max="100" value="{{ pct }}" aria-label="{{ lang.t("Calories eaten compared with target") }}">{{ pct }}%</progress>
+      {% if let Some(r) = remaining %}<p><strong>{{ r }} kcal</strong> {{ lang.t("remaining") }}</p>{% endif %}
+      {% if let Some(o) = over %}<p><strong>{{ o }} kcal</strong> {{ lang.t("above target") }}</p>{% endif %}
+    {% else %}
+      <p class="big-number"><strong>{{ consumed }}</strong> {{ lang.t("kcal eaten") }}</p>
+      <p class="subtle">{{ lang.t("No daily target set.") }} <a href="/goals">{{ lang.t("Set a goal") }}</a></p>
+    {% endif %}
+    {% if incomplete %}<p class="warning"><span aria-hidden="true">⚠</span> {{ lang.t("Some entries have missing nutrition values, so totals may be higher.") }}</p>{% endif %}
+  </div>
+  <dl class="macros">
+  {% for m in macros %}
+    <div>
+      <dt>{{ m.label }}</dt>
+      <dd>{{ m.consumed }}{% if let Some(g) = m.goal %} / {{ g }}{% endif %} g
+        {% if m.goal.is_some() %}<progress max="100" value="{{ m.pct }}" aria-label="{{ lang.f1("{0} compared with goal", m.label) }}">{{ m.pct }}%</progress>{% endif %}
+      </dd>
+    </div>
+  {% endfor %}
+  </dl>
+  <p><a class="button primary" href="{{ add_url }}">+ {{ lang.t("Add food") }}</a></p>
+</section>
+
+{% for meal in meals %}
+<section class="meal card" id="meal-{{ meal.key }}" aria-labelledby="h-{{ meal.key }}">
+  <div class="meal-head">
+    <h2 id="h-{{ meal.key }}">{{ meal.label }}</h2>
+    <p class="meal-total">{{ meal.kcal }} kcal{% if meal.incomplete %} <span class="badge">{{ lang.t("incomplete") }}</span>{% endif %}</p>
+  </div>
+  {% if meal.entries.is_empty() %}
+    <p class="subtle">{{ lang.t("Nothing logged.") }}</p>
+  {% else %}
+  <ul class="entries">
+    {% for e in meal.entries %}
+    <li class="entry">
+      <a class="entry-main" href="/diary/entries/{{ e.id }}/edit">
+        <span class="entry-name">{{ e.name }}{% if !e.brand.is_empty() %} <span class="subtle">· {{ e.brand }}</span>{% endif %}</span>
+        <span class="entry-meta">{{ e.amount }} · {{ lang.t("P") }} {{ e.protein }} g · {{ lang.t("C") }} {{ e.carbs }} g · {{ lang.t("F") }} {{ e.fat }} g{% if e.missing %} · <span class="badge">{{ lang.t("values missing") }}</span>{% endif %}</span>
+      </a>
+      <span class="entry-kcal">{{ e.kcal }} kcal</span>
+      <form method="post" action="/diary/entries/{{ e.id }}/delete" class="inline" data-confirm="{{ lang.f2("Delete {0} from {1}?", e.name, meal.label) }}">
+        <button type="submit" class="icon-button" aria-label="{{ lang.f1("Delete {0}", e.name) }}">✕</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  <p class="subtle meal-macros">{{ lang.t("P") }} {{ meal.protein }} g · {{ lang.t("C") }} {{ meal.carbs }} g · {{ lang.t("F") }} {{ meal.fat }} g</p>
+  {% endif %}
+  <p><a href="{{ meal.add_url }}">+ {{ meal.add_label }}</a></p>
+</section>
+{% endfor %}
+{% endblock %}

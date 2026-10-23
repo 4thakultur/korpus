@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_flash.html" %}
+<p><a href="{{ back_url }}">← {{ lang.t("Back to search") }}</a></p>
+<h1>{{ food.name }}</h1>
+{% if let Some(b) = food.brand %}<p class="subtle">{{ b }}</p>{% endif %}
+
+{% if !missing_core.is_empty() %}
+<p class="warning" role="note"><span aria-hidden="true">⚠</span> {{ lang.t("Missing values:") }} {% for m in missing_core %}{{ m }}{% if !loop.last %}, {% endif %}{% endfor %}. {{ lang.t("Totals will not include them.") }} <a href="/foods/{{ food.id }}/edit">{{ lang.t("Add them if you know them.") }}</a></p>
+{% endif %}
+
+<section class="card log-card" aria-labelledby="log-heading">
+  <h2 id="log-heading">{{ lang.t("Add to diary") }}</h2>
+  {% include "_errors.html" %}
+  <form method="post" action="/diary/entries" class="log-form"
+        data-nutrients data-kcal="{{ data_kcal }}" data-protein="{{ data_protein }}" data-carbs="{{ data_carbs }}" data-fat="{{ data_fat }}">
+    <input type="hidden" name="food_id" value="{{ food.id }}">
+    <div class="field">
+      <label for="amount">{{ lang.f1("Amount ({0})", unit) }}</label>
+      <div class="input-unit">
+        <input type="text" id="amount" name="amount" value="{{ amount }}" inputmode="decimal" required autocomplete="off"
+          {% if errors.has("amount") %}aria-invalid="true" aria-describedby="amount-error"{% endif %}>
+        <span aria-hidden="true">{{ unit }}</span>
+      </div>
+      {% if let Some(e) = errors.get("amount") %}<p class="field-error" id="amount-error">{{ e }}</p>{% endif %}
+      <div class="quick-amounts" role="group" aria-label="{{ lang.t("Quick amounts") }}">
+        {% if !serving_amount.is_empty() %}<button type="button" data-amount="{{ serving_amount }}">{{ lang.f2("1 serving ({0} {1})", serving_amount, unit) }}</button>{% endif %}
+        <button type="button" data-amount="50">50 {{ unit }}</button>
+        <button type="button" data-amount="100">100 {{ unit }}</button>
+        <button type="button" data-amount="200">200 {{ unit }}</button>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label for="meal">{{ lang.t("Meal") }}</label>
+        <select id="meal" name="meal" {% if errors.has("meal") %}aria-invalid="true" aria-describedby="meal-error"{% endif %}>
+          {% for m in meals %}<option value="{{ m.as_str() }}"{% if m.as_str() == meal %} selected{% endif %}>{{ m.label(*lang) }}</option>{% endfor %}
+        </select>
+        {% if let Some(e) = errors.get("meal") %}<p class="field-error" id="meal-error">{{ e }}</p>{% endif %}
+      </div>
+      <div class="field">
+        <label for="date">{{ lang.t("Date") }}</label>
+        <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+        {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
+      </div>
+    </div>
+    <p class="preview" aria-live="polite" data-preview hidden></p>
+    <button type="submit" class="primary">{{ lang.t("Add to diary") }}</button>
+  </form>
+</section>
+
+<section class="card" aria-labelledby="nutrition-heading">
+  <h2 id="nutrition-heading">{{ lang.t("Nutrition") }}</h2>
+  <table class="nutrition">
+    <caption class="visually-hidden">{{ lang.f1("Nutrition values for {0}", food.name) }}</caption>
+    <thead>
+      <tr><th scope="col">{{ lang.t("Nutrient") }}</th><th scope="col">{{ basis_label|capitalize }}</th>{% if let Some(h) = serving_heading %}<th scope="col">{{ h }}</th>{% endif %}</tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      <tr{% if r.missing %} class="missing"{% endif %}>
+        <th scope="row">{{ r.label }}{% if !r.core %} <span class="subtle">{{ lang.t("(optional)") }}</span>{% endif %}</th>
+        <td>{{ r.per100 }}</td>
+        {% if serving_heading.is_some() %}<td>{{ r.per_serving }}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if food.energy_from_kj %}<p class="subtle">{{ lang.t("Energy was given in kJ and converted (1 kcal = 4.184 kJ).") }}</p>{% endif %}
+</section>
+
+<section class="card" aria-labelledby="source-heading">
+  <h2 id="source-heading">{{ lang.t("Source") }}</h2>
+  <dl class="facts">
+    <div><dt>{{ lang.t("Data source") }}</dt><dd>{{ source_label }}{% if food.edited_locally %} {{ lang.t("(edited by you)") }}{% endif %}</dd></div>
+    {% if let Some(b) = food.barcode %}<div><dt>{{ lang.t("Barcode") }}</dt><dd>{{ b }}</dd></div>{% endif %}
+    {% if let Some(u) = food.source_updated_at %}<div><dt>{{ lang.t("Last updated at source") }}</dt><dd>{{ u }}</dd></div>{% endif %}
+    {% if let Some(f) = food.fetched_at %}<div><dt>{{ lang.t("Retrieved") }}</dt><dd>{{ f }}</dd></div>{% endif %}
+    <div><dt>{{ lang.t("Saved in Korpus") }}</dt><dd>{{ food.updated_at }}</dd></div>
+  </dl>
+  {% if let Some(n) = food.notes %}<p class="notes">{{ n }}</p>{% endif %}
+  {% if let Some(a) = attribution %}<p class="attribution">{{ a }}{% if let Some(u) = source_url %} <a href="{{ u }}" rel="noopener noreferrer">{{ lang.t("View on Open Food Facts") }}</a>{% endif %}</p>{% endif %}
+  <ul class="actions">
+    <li><a class="button" href="/foods/{{ food.id }}/edit">{{ lang.t("Edit food") }}</a></li>
+    <li><a class="button danger" href="/foods/{{ food.id }}/delete">{{ lang.t("Delete food") }}</a></li>
+  </ul>
+</section>
+{% endblock %}

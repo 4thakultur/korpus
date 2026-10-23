@@ -1,0 +1,4 @@
+<span class="result-name">{{ r.name }}{% if !r.brand.is_empty() %} <span class="subtle">· {{ r.brand }}</span>{% endif %}</span>
+<span class="result-meta">{{ r.kcal }} kcal · {{ lang.t("P") }} {{ r.protein }} g · {{ lang.t("C") }} {{ r.carbs }} g · {{ lang.t("F") }} {{ r.fat }} g <span class="subtle">{{ r.basis_label }}</span></span>
+<span class="result-source">{{ r.source_label }}{% if !r.barcode.is_empty() %} · {{ r.barcode }}{% endif %}{% if !r.updated.is_empty() %} · {{ lang.f1("updated {0}", r.updated) }}{% endif %}</span>
+{% if !r.missing.is_empty() %}<span class="badge">{{ lang.f1("Missing: {0}", r.missing) }}</span>{% endif %}

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ lang.t("Welcome to Korpus") }}</h1>
+<p>{{ lang.t("Korpus is a private food diary that runs on your own server. A few quick settings, then you can start logging.") }}</p>
+{% include "_errors.html" %}
+<form method="post" action="/setup" class="stack card">
+  {% include "_profile_fields.html" %}
+  <button type="submit" class="primary">{{ lang.t("Continue") }}</button>
+</form>
+{% endblock %}
