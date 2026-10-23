@@ -1296,6 +1296,195 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Choisissez une apparence.",
         "Elija una apariencia.",
     ),
+    (
+        "Tables are listed in the order that best fits {0}; search uses the first one imported.",
+        "Les tables sont classées dans l'ordre le mieux adapté à : {0} ; la recherche utilise la première importée.",
+        "Las tablas aparecen en el orden que mejor se adapta a {0}; la búsqueda usa la primera importada.",
+    ),
+    (
+        "Download the Excel file “Nutrient profiles”.",
+        "Téléchargez le fichier Excel « Nutrient profiles ».",
+        "Descargue el archivo Excel «Nutrient profiles».",
+    ),
+    (
+        "Official download page",
+        "Page de téléchargement officielle",
+        "Página de descarga oficial",
+    ),
+    ("Not imported", "Non importée", "No importada"),
+    (
+        "Food table removed. Foods you already saved from it are kept.",
+        "Table supprimée. Les aliments que vous en aviez déjà enregistrés sont conservés.",
+        "Tabla eliminada. Los alimentos que ya guardó de ella se conservan.",
+    ),
+    ("Remove table", "Supprimer la table", "Eliminar la tabla"),
+    (
+        "Search includes generic foods from {0}.",
+        "La recherche inclut les aliments génériques de {0}.",
+        "La búsqueda incluye los alimentos genéricos de {0}.",
+    ),
+    (
+        "Import and replace",
+        "Importer et remplacer",
+        "Importar y reemplazar",
+    ),
+    (
+        "Download the CSV zip files for Foundation Foods and SR Legacy (and optionally FNDDS survey foods). You can upload several at once. Branded foods are not supported.",
+        "Téléchargez les fichiers zip CSV « Foundation Foods » et « SR Legacy » (et, si vous le souhaitez, « FNDDS »). Vous pouvez en envoyer plusieurs à la fois. Les produits de marque (« Branded Foods ») ne sont pas pris en charge.",
+        "Descargue los archivos zip CSV de «Foundation Foods» y «SR Legacy» (y, si lo desea, «FNDDS»). Puede subir varios a la vez. Los productos de marca («Branded Foods») no son compatibles.",
+    ),
+    (
+        "Canadian Nutrient File, Health Canada. Open Government Licence – Canada.",
+        "Fichier canadien sur les éléments nutritifs, Santé Canada. Licence du gouvernement ouvert – Canada.",
+        "Canadian Nutrient File, Health Canada. Licencia de Gobierno Abierto – Canadá.",
+    ),
+    (
+        "Downloaded files",
+        "Fichiers téléchargés",
+        "Archivos descargados",
+    ),
+    (
+        "Food composition tables",
+        "Tables de composition des aliments",
+        "Tablas de composición de alimentos",
+    ),
+    (
+        "{0} foods, imported {1}",
+        "{0} aliments, importée le {1}",
+        "{0} alimentos, importada el {1}",
+    ),
+    (
+        "Food table imported. Search now uses it where it fits your country.",
+        "Table importée. La recherche l'utilise désormais si elle convient à votre pays.",
+        "Tabla importada. La búsqueda la usará cuando corresponda a su país.",
+    ),
+    (
+        "Australian Food Composition Database, © Food Standards Australia New Zealand, used under its data user licence. FSANZ does not endorse Korpus.",
+        "Australian Food Composition Database, © Food Standards Australia New Zealand, utilisée selon sa licence d'utilisation des données. FSANZ ne cautionne pas Korpus.",
+        "Australian Food Composition Database, © Food Standards Australia New Zealand, usada según su licencia de uso de datos. FSANZ no respalda a Korpus.",
+    ),
+    (
+        "Download the CSV zip file of the Canadian Nutrient File.",
+        "Téléchargez le fichier zip CSV du Fichier canadien sur les éléments nutritifs.",
+        "Descargue el archivo zip CSV del Canadian Nutrient File.",
+    ),
+    ("unknown country", "pays inconnu", "país desconocido"),
+    (
+        "Update or remove",
+        "Mettre à jour ou supprimer",
+        "Actualizar o eliminar",
+    ),
+    (
+        "Used for search",
+        "Utilisée pour la recherche",
+        "Usada en la búsqueda",
+    ),
+    (
+        "No foods were found in the upload for {0}.",
+        "Aucun aliment n'a été trouvé dans le fichier envoyé pour {0}.",
+        "No se encontraron alimentos en el archivo subido para {0}.",
+    ),
+    (
+        "Chooses the national food composition table that search uses. It is never sent anywhere.",
+        "Détermine la table nationale de composition des aliments utilisée par la recherche. Cette information n'est jamais transmise.",
+        "Determina la tabla nacional de composición de alimentos que usa la búsqueda. Nunca se envía a ningún sitio.",
+    ),
+    ("Country", "Pays", "País"),
+    (
+        "No table is imported yet. Import one to find generic foods such as fruit, vegetables, meat or cooked dishes.",
+        "Aucune table n'est encore importée. Importez-en une pour trouver des aliments génériques : fruits, légumes, viandes ou plats cuisinés.",
+        "Todavía no hay ninguna tabla importada. Importe una para encontrar alimentos genéricos como frutas, verduras, carnes o platos cocinados.",
+    ),
+    (
+        "Download the Excel file of the Composition of Foods Integrated Dataset.",
+        "Téléchargez le fichier Excel « Composition of Foods Integrated Dataset ».",
+        "Descargue el archivo Excel «Composition of Foods Integrated Dataset».",
+    ),
+    (
+        "Salt was calculated from sodium (salt = sodium × 2.5).",
+        "Le sel a été calculé à partir du sodium (sel = sodium × 2,5).",
+        "La sal se calculó a partir del sodio (sal = sodio × 2,5).",
+    ),
+    (
+        "Downloaded file",
+        "Fichier téléchargé",
+        "Archivo descargado",
+    ),
+    (
+        "Download the XML zip file of the Ciqual table.",
+        "Téléchargez le fichier zip XML de la table Ciqual.",
+        "Descargue el archivo zip XML de la tabla Ciqual.",
+    ),
+    (
+        "Remove {0}? Foods you already saved from it are kept.",
+        "Supprimer {0} ? Les aliments que vous en aviez déjà enregistrés sont conservés.",
+        "¿Eliminar {0}? Los alimentos que ya guardó de ella se conservan.",
+    ),
+    (
+        "{0} does not have the expected layout for {1}. The publisher may have changed its format.",
+        "{0} n'a pas la structure attendue pour {1}. L'éditeur a peut-être changé son format.",
+        "{0} no tiene la estructura esperada para {1}. Es posible que el editor haya cambiado su formato.",
+    ),
+    (
+        "Files are read on this server, and searching these tables never contacts their publishers. Tables can also be imported from the command line, for example:",
+        "Les fichiers sont lus sur ce serveur, et la recherche dans ces tables ne contacte jamais leurs éditeurs. Les tables peuvent aussi être importées en ligne de commande, par exemple :",
+        "Los archivos se leen en este servidor y la búsqueda en estas tablas nunca contacta con sus editores. Las tablas también se pueden importar desde la línea de comandos, por ejemplo:",
+    ),
+    (
+        "Recommended for your country",
+        "Recommandée pour votre pays",
+        "Recomendada para su país",
+    ),
+    (
+        "McCance and Widdowson's Composition of Foods Integrated Dataset, Public Health England. Open Government Licence v3.0.",
+        "McCance and Widdowson's Composition of Foods Integrated Dataset, Public Health England. Open Government Licence v3.0.",
+        "McCance and Widdowson's Composition of Foods Integrated Dataset, Public Health England. Open Government Licence v3.0.",
+    ),
+    (
+        "The file could not be opened. Upload the file exactly as downloaded for {0}.",
+        "Le fichier n'a pas pu être ouvert. Envoyez le fichier tel qu'il a été téléchargé pour {0}.",
+        "No se pudo abrir el archivo. Suba el archivo tal como se descargó para {0}.",
+    ),
+    (
+        "The upload does not contain {0}. Check that you downloaded the right file for {1}.",
+        "Le fichier envoyé ne contient pas {0}. Vérifiez que vous avez téléchargé le bon fichier pour {1}.",
+        "El archivo subido no contiene {0}. Compruebe que descargó el archivo correcto para {1}.",
+    ),
+    (
+        "USDA FoodData Central, U.S. Department of Agriculture, Agricultural Research Service. Public domain (CC0 1.0).",
+        "USDA FoodData Central, ministère de l'Agriculture des États-Unis, Agricultural Research Service. Domaine public (CC0 1.0).",
+        "USDA FoodData Central, Departamento de Agricultura de los Estados Unidos, Agricultural Research Service. Dominio público (CC0 1.0).",
+    ),
+    (
+        "Choose a country from the list.",
+        "Choisissez un pays dans la liste.",
+        "Elija un país de la lista.",
+    ),
+    (
+        "Set your country above so search uses the table that fits it best.",
+        "Indiquez votre pays ci-dessus pour que la recherche utilise la table la mieux adaptée.",
+        "Indique su país arriba para que la búsqueda use la tabla que mejor se adapte.",
+    ),
+    (
+        "ANSES-CIQUAL French food composition table. Licence Ouverte / Open Licence (Etalab).",
+        "Table de composition nutritionnelle des aliments ANSES-CIQUAL. Licence Ouverte / Open Licence (Etalab).",
+        "Tabla francesa de composición de alimentos ANSES-CIQUAL. Licence Ouverte / Open Licence (Etalab).",
+    ),
+    (
+        "Carbohydrate is the total by difference and includes fibre, unlike European labels.",
+        "Les glucides sont le total calculé par différence et incluent les fibres, contrairement aux étiquettes européennes.",
+        "Los carbohidratos son el total por diferencia e incluyen la fibra, a diferencia de las etiquetas europeas.",
+    ),
+    (
+        "Published as traces or below the detection limit and recorded as 0: {0}.",
+        "Publié en traces ou sous la limite de détection et enregistré comme 0 : {0}.",
+        "Publicado como trazas o por debajo del límite de detección y registrado como 0: {0}.",
+    ),
+    (
+        "Choose the downloaded file to import.",
+        "Choisissez le fichier téléchargé à importer.",
+        "Elija el archivo descargado que desea importar.",
+    ),
 ];
 
 #[cfg(test)]

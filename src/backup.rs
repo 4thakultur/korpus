@@ -185,6 +185,9 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
     if export.profile.language.is_some() && export.profile.lang().is_none() {
         return Err(invalid(lang, lang.t("unknown language")));
     }
+    if export.profile.country.is_some() && export.profile.country().is_none() {
+        return Err(invalid(lang, lang.t("unknown country")));
+    }
     for f in &export.foods {
         let food = || lang.f("food {0}", &[&f.id]);
         let basis =
@@ -242,11 +245,12 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     let p = &export.profile;
     sqlx::query(
         "UPDATE profile SET setup_complete = 1, unit_system = ?, timezone = ?, language = ?,
-             updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 1",
+             country = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 1",
     )
     .bind(&p.unit_system)
     .bind(&p.timezone)
     .bind(p.lang().map(Lang::code))
+    .bind(p.country())
     .execute(&mut *tx)
     .await?;
 

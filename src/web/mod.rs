@@ -56,6 +56,13 @@ pub fn router(state: AppState) -> Router {
             crate::backup::MAX_IMPORT_BYTES + 64 * 1024,
         ));
 
+    let dataset_upload = Router::new()
+        .route("/settings/datasets/{id}", post(settings::import_dataset))
+        .layer(DefaultBodyLimit::disable())
+        .layer(RequestBodyLimitLayer::new(
+            crate::datasets::MAX_UPLOAD_BYTES + 64 * 1024,
+        ));
+
     Router::new()
         .route("/", get(diary::root))
         .route("/setup", get(settings::setup_form).post(settings::setup_save))
@@ -82,12 +89,14 @@ pub fn router(state: AppState) -> Router {
         .route("/settings/export.json", get(settings::export_json))
         .route("/settings/diary.csv", get(settings::export_csv))
         .route("/settings/backup.sqlite", get(settings::backup))
+        .route("/settings/datasets/{id}/remove", post(settings::remove_dataset))
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(readyz))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .merge(import)
+        .merge(dataset_upload)
         .fallback(|| async { AppError::NotFound })
         .layer(middleware::from_fn(same_origin_writes))
         .layer(middleware::from_fn_with_state(state.clone(), language))
@@ -290,6 +299,12 @@ pub fn flash_message(key: Option<&str>, lang: Lang) -> Option<&'static str> {
         "settings_saved" => lang.t("Settings saved."),
         "appearance_saved" => lang.t("Appearance saved on this device."),
         "imported" => lang.t("Import complete."),
+        "dataset_imported" => {
+            lang.t("Food table imported. Search now uses it where it fits your country.")
+        }
+        "dataset_removed" => {
+            lang.t("Food table removed. Foods you already saved from it are kept.")
+        }
         _ => return None,
     })
 }

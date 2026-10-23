@@ -651,6 +651,13 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .providers li { padding: 10px 0; border-bottom: 0.5px solid var(--separator); font-size: 0.9375rem; }
 .providers li:last-child { border-bottom: 0; }
 .download svg { width: 20px; height: 20px; color: var(--tint); }
+.dataset + .dataset { margin-top: 12px; }
+.dataset h3 { font-size: 1.0625rem; margin: 0 0 4px; }
+.dataset p { margin: 0 0 6px; }
+.dataset details { margin-top: 8px; }
+.dataset summary { cursor: pointer; color: var(--tint); font-weight: 600; padding: 10px 0; line-height: 24px; }
+.dataset form + form { margin-top: 10px; }
+.badge.ok { background: var(--tint-fill); color: var(--tint); }
 
 /* ---------- Setup ---------- */
 .welcome { text-align: center; margin: 24px 0 24px; }

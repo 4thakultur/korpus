@@ -1,7 +1,9 @@
-//! Food search across local foods and every enabled provider, shown as one
-//! list: saved foods first, then provider products not saved yet.
+//! Food search across local foods, the food composition table chosen for
+//! the user's country and every enabled provider, shown as one list: saved
+//! foods first, then table foods, then provider products not saved yet.
 //!
-//! Local results render immediately. Provider results are fetched in a
+//! Saved foods and table foods are local and render immediately. Provider
+//! results are fetched in a
 //! second request and appended (or fetched inline when the form is
 //! submitted without the page script), so a slow or unreachable provider
 //! never delays local search.
@@ -15,6 +17,7 @@ use serde::Deserialize;
 use super::{
     AppState, LogContext, current_lang, flash_message, render, url_encode, wants_fragment,
 };
+use crate::datasets;
 use crate::error::AppResult;
 use crate::foods::{self, Food, MAX_QUERY_CHARS, is_valid_barcode, normalize_barcode};
 use crate::i18n::Lang;
@@ -284,8 +287,24 @@ pub async fn page(
         .iter()
         .map(|f| local_item(f, &ctx, lang))
         .collect();
-    let mut errors = Vec::new();
+    let mut attributions = Vec::new();
     let mut has_more = local.has_more;
+    // Barcodes are for packaged products, which the tables do not hold.
+    if !q.is_empty() && !is_valid_barcode(&normalize_barcode(&q)) {
+        let country = crate::profile::country(&state.db).await?;
+        if let Some(d) = datasets::active(&state.db, country).await? {
+            let found = datasets::search(&state.db, d, &q, page, lang).await?;
+            if !found.foods.is_empty() {
+                attributions.push(Attribution {
+                    text: d.attribution(lang),
+                    url: d.download_url(),
+                });
+            }
+            items.extend(found.foods.iter().map(|f| remote_item(f, lang)));
+            has_more |= found.has_more;
+        }
+    }
+    let mut errors = Vec::new();
     if inline_remote {
         let remote = remote_results(&state, &q, page, lang).await?;
         items.extend(remote.items);
@@ -319,18 +338,14 @@ pub async fn page(
         next_url: has_more.then(|| search_url(&q, &ctx, page + 1, extra)),
         next_if_more_url: (pending && !has_more && page < MAX_PAGE)
             .then(|| search_url(&q, &ctx, page + 1, extra)),
-        attributions: if search_remote {
-            state
-                .providers
-                .all()
-                .iter()
-                .map(|p| Attribution {
+        attributions: {
+            if search_remote {
+                attributions.extend(state.providers.all().iter().map(|p| Attribution {
                     text: p.attribution(lang),
                     url: p.attribution_url(),
-                })
-                .collect()
-        } else {
-            Vec::new()
+                }));
+            }
+            attributions
         },
         create_url: create_url(&q, &ctx),
         message: flash_message(sq.msg.as_deref(), lang),

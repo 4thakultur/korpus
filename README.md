@@ -6,6 +6,7 @@ track your weight and set a calorie target if you want one.
 
 - **Private.** Your diary, weight and profile stay in one SQLite file on your server. There is no analytics, tracking or AI.
 - **Works offline from providers.** Products are looked up in [Open Food Facts](https://world.openfoodfacts.org) when it's enabled. Your own foods, your diary and everything else work when it is down or turned off.
+- **National food tables, searched locally.** Import the official food composition table for your country (France, UK, USA, Canada or Australia). Korpus picks the one that fits the country set in your profile. Generic foods such as "apple, raw" then come with laboratory values, and searching them never leaves your server.
 - **Honest data.** Every food shows where its values come from. Missing values are flagged and never made up. Past diary days never change when you edit or delete a food.
 - **English, French and Spanish.** The interface follows your browser's language or the one you pick in Settings. Food names are never machine-translated: product databases are searched in your language and return the names written in it.
 - **Lightweight.** One Rust binary with server-rendered HTML and about 6 KB of optional JavaScript.
@@ -37,7 +38,7 @@ With the default settings the database is created at `./data/korpus.db`.
 
 ### First run
 
-1. Choose a language (or keep following the browser), metric or imperial units and your time zone. The time zone decides when a new diary day starts.
+1. Choose a language (or keep following the browser), your country, metric or imperial units and your time zone. The country picks the food composition table search uses. The time zone decides when a new diary day starts.
 2. You can set a calorie goal now, or skip it.
 3. You land on today's diary. Press **Add food**, search for a product or create it from its label, enter the amount and add it to a meal.
 
@@ -111,6 +112,9 @@ Korpus makes outgoing requests only to the food databases you enable:
 |---|---|---|
 | Open Food Facts | You pause typing for 300 ms on a search of 2 or more characters, submit a search or select a product | The search words or barcode, the interface language code (`en`, `fr` or `es`), plus a User-Agent naming Korpus |
 
+Imported food composition tables are searched in the local database and are
+never contacted: they make no network requests at all.
+
 Results refresh 300 ms after the last keystroke, for your own foods and the
 food databases alike (queries of at least 2 characters). Requests that a newer
 query has replaced are cancelled, and results are cached. Diary, weight
@@ -150,10 +154,40 @@ appear in a database search.
 
 ### Search
 
-Search shows one list: your saved foods first, then products from every
-enabled food database that you have not saved yet. Results refresh 300 ms after you stop typing: your
+Search shows one list: your saved foods first, then foods from the food
+composition table chosen for your country, then products from every enabled
+food database that you have not saved yet. Searching for a barcode skips the
+tables, which hold no packaged products. Results refresh 300 ms after you stop typing: your
 foods first, then database results added to the same list. Selecting a
 database product saves it to your foods.
+
+Each part of the list is ranked the same way:
+- how many of your words appear in the name or brand, counting plurals
+  ("oeufs" finds "Oeuf, cru"), accents, ligatures ("oeufs" finds "Œufs") and
+  words written apart or together ("pompotes", "Pom'Potes");
+- how closely the name matches what you typed. Words such as "cru",
+  "cuit" or "pulpe" don't count against a name, and a table's default entry
+  ("Fromage (aliment moyen)") comes first for the food it names;
+- names that start with your first word, or contain your words in the order
+  you typed them, rank higher;
+- popularity: how often you have logged a saved food, or how often an Open
+  Food Facts product has been scanned. The well-documented entry comes before
+  its one-scan duplicates;
+- whether an Open Food Facts product has an energy value.
+
+Saved foods match any part of a word ("apple" finds "Pineapple", ranked
+lower). Food composition tables match the start of words, so "eau" doesn't
+list every "gâteau".
+
+Open Food Facts results are re-ordered by Korpus. Each search fetches 100
+candidates (enough for five result pages) and ranks them. Copies of the same
+product under different barcodes (same name, brand, energy and macronutrients)
+are shown once.
+
+If no candidate contains every word but your search names a brand or a
+store's own label (for example "picard pavé saumon"), Korpus makes one more
+search restricted to that brand. That search uses one more request from the
+per-minute budget and is skipped when the budget is used up.
 
 Korpus enforces Open Food Facts' published request limits on its side (about
 10 searches and 100 product reads per minute). When fast or slow typing uses
@@ -171,6 +205,83 @@ Products you select are saved in your local database. If you **redistribute**
 a database or export that contains Open Food Facts products, the ODbL
 share-alike and attribution terms apply to that data. See
 <https://world.openfoodfacts.org/terms-of-use>.
+
+## Food composition tables
+
+Open Food Facts covers packaged products well but generic foods poorly. For
+those, Korpus can import the official national food composition tables.
+These are measured or officially compiled values with stable codes. You
+download each file once from its publisher and import it. Korpus then
+searches it in its own database, so no search ever leaves your server.
+
+| Table | Country | Download | Licence |
+|---|---|---|---|
+| ANSES-CIQUAL (2020) | France | [XML zip](https://www.data.gouv.fr/fr/datasets/table-de-composition-nutritionnelle-des-aliments-ciqual/) | Licence Ouverte / Etalab |
+| CoFID, McCance and Widdowson's (2021) | United Kingdom | [Excel file](https://www.gov.uk/government/publications/composition-of-foods-integrated-dataset-cofid) | Open Government Licence v3.0 |
+| USDA FoodData Central | United States | [Foundation Foods and SR Legacy CSV zips](https://fdc.nal.usda.gov/download-datasets) | Public domain (CC0 1.0) |
+| Canadian Nutrient File (2015) | Canada | [CSV zip](https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/nutrient-data/canadian-nutrient-file-2015-download-files.html) | Open Government Licence – Canada |
+| Australian Food Composition Database (Release 3) | Australia | [Excel file "Nutrient profiles"](https://www.foodstandards.gov.au/science-data/food-nutrient-databases/afcd/australian-food-composition-database-download-excel-files) | FSANZ data user licence; FSANZ does not endorse Korpus |
+
+**Importing.** In **Settings → Food composition tables**, upload the file
+exactly as downloaded (for USDA, upload the Foundation and SR Legacy zips
+together). Or use the command line, for example for scripted installs:
+
+```sh
+korpus dataset import ciqual XML_2020_07_07.zip
+korpus dataset import usda FoodData_Central_foundation_food_csv_*.zip FoodData_Central_sr_legacy_food_csv_*.zip
+korpus dataset list
+korpus dataset remove cnf
+
+# With Docker Compose, copy the file into the container first:
+docker compose cp XML_2020_07_07.zip korpus:/tmp/
+docker compose exec korpus korpus dataset import ciqual /tmp/XML_2020_07_07.zip
+```
+
+Importing a table again replaces it in one transaction; if the file is wrong,
+the previous version stays. Removing a table keeps every food you already
+saved from it, along with your diary.
+
+**Which table is used.** Search uses one table: the first imported one in the
+order that fits your profile's country.
+
+| Your country | Order of preference |
+|---|---|
+| France, Belgium, Luxembourg, Monaco | CIQUAL, CoFID, USDA, CNF, AFCD |
+| United Kingdom, Ireland | CoFID, CIQUAL, USDA, AFCD, CNF |
+| Other European countries | CIQUAL, CoFID, USDA, AFCD, CNF |
+| United States, Puerto Rico | USDA, CNF, CoFID, AFCD, CIQUAL |
+| Canada | CNF, USDA, CIQUAL, CoFID, AFCD |
+| Australia, New Zealand | AFCD, CoFID, USDA, CNF, CIQUAL |
+| Other countries, or none set | USDA, CNF, CoFID, CIQUAL, AFCD |
+
+European tables come first for European countries because they follow the
+same labelling rules as the packages you buy there: EU energy factors, and
+carbohydrate without fibre. Food names are shown in your interface language
+when the table publishes it: CIQUAL and CNF have French and English names,
+the others English only. Names are never machine-translated.
+
+**What is converted, and how it is shown.** Values are stored as published,
+per 100 g. CoFID's alcoholic drinks and AFCD's liquids are stored per 100 ml,
+as those tables publish them. Each saved food's notes list every
+conversion:
+
+- Energy published only in kJ (AFCD, and the rare food elsewhere) is converted with 1 kcal = 4.184 kJ.
+- Salt published only as sodium is calculated as sodium × 2.5.
+- USDA and CNF carbohydrate is the North American "total by difference", which **includes fibre**, unlike European labels. It is kept as published and noted.
+- Values published as "traces" or below a detection limit ("< 0.5", "Tr") are recorded as 0 and listed. Values marked not determined ("-", "N") stay missing. CIQUAL 2020, for example, publishes no energy value for about 900 foods, and Korpus shows them as missing rather than computing one.
+- Invalid values (negative, or impossible per 100 g) are dropped and listed, as for any provider. Carbohydrate and sugars may reach 106 g per 100 g, because UK tables express sugars as monosaccharide equivalents (100 g of sucrose is 105.3 g).
+
+**Not supported yet.** Germany's BLS 4.0, the Netherlands' NEVO and
+Finland's Fineli are freely usable, but their download files could not be
+checked while this importer was written (a licence form, a request form and
+a bot challenge respectively), so they have no importer. Spain's BEDCA has
+no open bulk download. USDA branded foods (a multi-gigabyte file) are not
+imported; Open Food Facts covers packaged products.
+
+**Licences.** Each table's attribution is shown in Settings, next to search
+results that come from it and on every food saved from it. The data is
+yours to use under those licences. If you redistribute a database that
+contains imported tables, include their attribution.
 
 ## Backup and restore
 
@@ -213,6 +324,10 @@ docker compose start
 The volume name depends on your compose project directory; check it with
 `docker volume ls`.
 
+The database backup includes imported food composition tables. The JSON
+export does not: import the tables again after restoring from JSON. Foods you
+saved from them are part of the export.
+
 **Exports:** Settings also offers a full JSON export and a CSV of your diary
 for spreadsheets. A JSON export can be imported into a new, **empty**
 installation. Import never merges into existing data, and an invalid file
@@ -222,7 +337,7 @@ changes nothing.
 
 1. Back up (see above).
 2. `git pull && docker compose up -d --build` (or rebuild the binary and restart it).
-3. Migrations in [`migrations/`](migrations) run automatically at startup. They only add to the schema, and startup never deletes data. If a migration fails, Korpus refuses to start and leaves the database unchanged, so restore the backup or fix the issue and restart.
+3. Migrations in [`migrations/`](migrations) run automatically at startup. They only add to the schema, and startup never deletes data. When a new version changes how search text is normalized, the search index of saved and table foods is rebuilt once at startup (a few seconds for a full table). If a migration fails, Korpus refuses to start and leaves the database unchanged, so restore the backup or fix the issue and restart.
 
 Downgrades are not supported. To go back, restore the backup taken before the
 upgrade.
@@ -240,6 +355,7 @@ upgrade.
 - Energy given in kJ is converted with 1 kcal = 4.184 kJ, and the food notes that the value was converted.
 - Values from a provider are validated. Negative, non-numeric or impossible values (for example more than 100 g of protein per 100 g) are dropped, flagged as missing and listed in the food's notes. Unknown values stay unknown and are never shown as 0. A day's total is marked incomplete when an entry is missing values.
 - For Open Food Facts products, the per-100 ml basis is inferred from the package quantity (such as "1 l"), and the food's notes say so.
+- Foods from food composition tables keep the table's own basis and values; see [Food composition tables](#food-composition-tables) for the few conversions and how they are noted.
 - Every diary entry keeps a **snapshot** of the food's name and nutrition. Editing or deleting a food never changes days you already logged.
 - Foods are shared within the installation. There is one local profile.
 
@@ -265,7 +381,8 @@ cargo test
 
 The tests use real migrations on in-memory and temporary SQLite databases,
 and a fake provider with saved Open Food Facts responses in `tests/fixtures`.
-They never call live APIs.
+They never call live APIs. Importer tests use rows copied from each
+publisher's real download.
 
 Code layout (`src/`):
 
@@ -276,6 +393,8 @@ Code layout (`src/`):
 | `nutrition` | Bases, nutrient scaling, kJ/kcal, validation, totals, display rounding |
 | `foods` | Food model, manual-entry validation, normalized local search, persistence |
 | `providers` | Provider trait, Open Food Facts adapter, TTL cache, rate limiter |
+| `datasets` | Food composition tables: importers per publisher format, storage, country preference, local search |
+| `countries` | Country list (names in each interface language) |
 | `diary` | Meals, entries with nutrition snapshots, daily totals |
 | `weight` | Weight history (canonical kg) |
 | `goals` | Mifflin–St Jeor estimate, safety rules, goal settings |

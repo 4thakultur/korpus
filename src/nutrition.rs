@@ -139,12 +139,15 @@ impl Nutrient {
     /// Largest plausible value per 100 units of `basis`.
     ///
     /// Per 100 g no macronutrient can exceed 100 g and energy is bounded by
-    /// pure fat (~900 kcal). Per 100 ml dense liquids (syrups, honey) can
-    /// exceed 100 g, so the bounds are looser.
+    /// pure fat (~900 kcal). The exception is carbohydrate expressed as
+    /// monosaccharide equivalents, as UK tables do: 100 g of sucrose is
+    /// 105.3 g. Per 100 ml dense liquids (syrups, honey) can exceed 100 g,
+    /// so the bounds are looser.
     pub fn max_per_100(self, basis: Basis) -> f64 {
         match (self, basis) {
             (Nutrient::Energy, Basis::Per100g) => 950.0,
             (Nutrient::Energy, Basis::Per100ml) => 1200.0,
+            (Nutrient::Carbs | Nutrient::Sugars, Basis::Per100g) => 106.0,
             (_, Basis::Per100g) => 100.0,
             (_, Basis::Per100ml) => 200.0,
         }
@@ -390,6 +393,13 @@ mod tests {
         ));
         assert!(matches!(
             check_value(Nutrient::Energy, g, 2000.0),
+            Err(ValueError::Implausible { .. })
+        ));
+        // Sugar as monosaccharide equivalents (UK tables), but no further.
+        assert_eq!(check_value(Nutrient::Carbs, g, 105.0), Ok(105.0));
+        assert_eq!(check_value(Nutrient::Sugars, g, 105.3), Ok(105.3));
+        assert!(matches!(
+            check_value(Nutrient::Carbs, g, 106.5),
             Err(ValueError::Implausible { .. })
         ));
         // Dense liquids may exceed 100 g per 100 ml.

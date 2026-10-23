@@ -47,6 +47,13 @@ pub struct ProviderFood {
     pub source_updated_at: Option<String>,
     /// Values present in the provider data but rejected as invalid.
     pub rejected: Vec<Nutrient>,
+    /// Salt was derived from sodium (salt = sodium × 2.5).
+    pub salt_from_sodium: bool,
+    /// Carbohydrate is "total, by difference" and includes fibre (North
+    /// American convention), unlike EU labels.
+    pub carbs_include_fiber: bool,
+    /// Nutrients published as traces or below a detection limit, stored as 0.
+    pub trace_values: Vec<Nutrient>,
 }
 
 impl ProviderFood {
@@ -64,6 +71,25 @@ impl ProviderFood {
             notes.push(lang.f(
                 "Values are {0}; the basis was inferred from the product's package quantity.",
                 &[&self.basis.label(lang)],
+            ));
+        }
+        if self.salt_from_sodium {
+            notes.push(
+                lang.t("Salt was calculated from sodium (salt = sodium × 2.5).")
+                    .to_string(),
+            );
+        }
+        if self.carbs_include_fiber {
+            notes.push(
+                lang.t("Carbohydrate is the total by difference and includes fibre, unlike European labels.")
+                    .to_string(),
+            );
+        }
+        if !self.trace_values.is_empty() {
+            let names: Vec<&str> = self.trace_values.iter().map(|n| n.label(lang)).collect();
+            notes.push(lang.f(
+                "Published as traces or below the detection limit and recorded as 0: {0}.",
+                &[&names.join(", ")],
             ));
         }
         if !self.rejected.is_empty() {

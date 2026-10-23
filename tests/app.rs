@@ -7,6 +7,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use korpus::config::Config;
+use korpus::datasets::{self, Dataset, DatasetFood};
 use korpus::i18n::Lang;
 use korpus::nutrition::{Basis, Nutrients};
 use korpus::providers::{
@@ -60,6 +61,9 @@ fn fake_food(code: &str, name: &str) -> ProviderFood {
         serving_label: Some("30 g".into()),
         source_updated_at: Some("2025-05-01".into()),
         rejected: vec![],
+        salt_from_sodium: false,
+        carbs_include_fiber: false,
+        trace_values: vec![],
     }
 }
 
@@ -189,6 +193,36 @@ impl App {
                 .header("sec-fetch-site", "same-origin")
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(form.to_string()))
+                .unwrap(),
+        )
+        .await
+    }
+
+    /// Posts files as `multipart/form-data`, like the Settings upload forms.
+    async fn upload(&self, uri: &str, files: &[(&str, &[u8])]) -> Resp {
+        let boundary = "korpus-test-boundary";
+        let mut body = Vec::new();
+        for (name, bytes) in files {
+            body.extend_from_slice(
+                format!(
+                    "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(bytes);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+        self.send(
+            Request::post(uri)
+                .header(header::HOST, "localhost")
+                .header(header::ORIGIN, "http://localhost")
+                .header("sec-fetch-site", "same-origin")
+                .header(
+                    header::CONTENT_TYPE,
+                    format!("multipart/form-data; boundary={boundary}"),
+                )
+                .body(Body::from(body))
                 .unwrap(),
         )
         .await
@@ -805,6 +839,38 @@ async fn local_search_ranks_exact_matches_first() {
 }
 
 #[tokio::test]
+async fn local_search_prefers_foods_logged_often_and_matches_plurals() {
+    let a = app().await;
+    a.setup().await;
+    for name in ["Yaourt nature brebis", "Yaourt nature vache"] {
+        a.post(
+            "/foods",
+            &format!(
+                "name={}&basis=g&energy=60&protein=4&carbs=5&fat=3",
+                name.replace(' ', "+")
+            ),
+        )
+        .await;
+    }
+    let vache: i64 = sqlx::query_scalar("SELECT id FROM foods WHERE name LIKE '%vache'")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    for day in ["2026-03-10", "2026-03-11"] {
+        a.post(
+            "/diary/entries",
+            &format!("food_id={vache}&date={day}&meal=breakfast&amount=125"),
+        )
+        .await;
+    }
+    let page = korpus::foods::search(&a.db, "yaourts nature", 1, Lang::Fr)
+        .await
+        .unwrap();
+    let names: Vec<&str> = page.foods.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["Yaourt nature vache", "Yaourt nature brebis"]);
+}
+
+#[tokio::test]
 async fn unknown_routes_and_ids_return_not_found() {
     let a = app().await;
     a.setup().await;
@@ -1134,4 +1200,217 @@ async fn nutrients_keep_their_colour_classes() {
     let day = a.get("/diary?date=2026-05-01").await;
     assert!(day.body.contains("<div class=\"c-protein\">"));
     assert!(day.body.contains("<b>P</b> 6.5 g"), "{}", day.body);
+}
+
+/// A table food for tests, with the given names (main language first).
+fn table_food(code: &str, names: &[(Lang, &str)], carbs_include_fiber: bool) -> DatasetFood {
+    DatasetFood {
+        code: code.into(),
+        names: names.iter().map(|(l, n)| (*l, n.to_string())).collect(),
+        basis: Basis::Per100g,
+        nutrients: Nutrients {
+            energy_kcal: Some(52.0),
+            protein_g: Some(0.3),
+            carbs_g: Some(13.8),
+            fat_g: Some(0.2),
+            ..Default::default()
+        },
+        energy_from_kj: false,
+        salt_from_sodium: false,
+        carbs_include_fiber,
+        trace: vec![],
+        rejected: vec![],
+    }
+}
+
+/// The hidden import fields of a result that is not saved yet.
+fn import_field(source: &str, code: &str) -> String {
+    format!(
+        "name=\"source\" value=\"{source}\">\n    <input type=\"hidden\" name=\"provider_id\" value=\"{code}\">"
+    )
+}
+
+#[tokio::test]
+async fn country_picks_the_food_composition_table() {
+    let a = app().await;
+    a.setup().await;
+    datasets::replace(
+        &a.db,
+        Dataset::Ciqual,
+        &[table_food(
+            "13039",
+            &[(Lang::Fr, "Pomme, crue"), (Lang::En, "Apple, raw")],
+            false,
+        )],
+    )
+    .await
+    .unwrap();
+    datasets::replace(
+        &a.db,
+        Dataset::Cnf,
+        &[table_food(
+            "1",
+            &[
+                (Lang::En, "Apples, raw, with skin"),
+                (Lang::Fr, "Pommes, crues, avec pelure"),
+            ],
+            true,
+        )],
+    )
+    .await
+    .unwrap();
+
+    let r = a
+        .post(
+            "/settings",
+            "unit_system=metric&timezone=UTC&language=&country=FR",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let page = a.get("/search?q=pomme").await;
+    assert!(
+        page.body.contains("Apple, raw"),
+        "names follow the interface language"
+    );
+    assert!(page.body.contains(&import_field("ciqual", "13039")));
+    assert!(
+        !page.body.contains("Apples, raw, with skin"),
+        "one table at a time"
+    );
+    assert!(
+        page.body
+            .contains("ANSES-CIQUAL French food composition table")
+    );
+    let settings = a.get("/settings").await;
+    assert!(
+        settings
+            .body
+            .contains("Search includes generic foods from ANSES-CIQUAL.")
+    );
+    assert!(
+        settings
+            .body
+            .contains("<option value=\"FR\" selected>France</option>")
+    );
+
+    // Another country, another table.
+    a.post(
+        "/settings",
+        "unit_system=metric&timezone=UTC&language=&country=CA",
+    )
+    .await;
+    let page = a.get("/search?q=apple").await;
+    assert!(page.body.contains("Apples, raw, with skin"));
+    assert!(!page.body.contains("Apple, raw<"));
+    // Barcodes are for packaged products only.
+    let page = a.get("/search?q=40000000").await;
+    assert!(!page.body.contains("Apples, raw"));
+
+    // Picking a table food saves it like a product, with its conversions explained.
+    let r = a
+        .post(
+            "/foods/import",
+            "source=cnf&provider_id=1&date=2026-04-01&meal=lunch",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let detail = a.get(&r.location.unwrap()).await;
+    assert!(detail.body.contains("Apples, raw, with skin"));
+    assert!(detail.body.contains("Canadian Nutrient File"));
+    assert!(detail.body.contains("includes fibre"));
+    assert!(detail.body.contains("Health Canada"));
+    // The saved copy is listed instead of the table row.
+    let page = a.get("/search?q=apple").await;
+    assert_eq!(page.body.matches("Apples, raw, with skin").count(), 1);
+    assert!(!page.body.contains(&import_field("cnf", "1")));
+
+    // Removing a table keeps saved foods; search falls back to the next table.
+    let r = a.post("/settings/datasets/cnf/remove", "").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let page = a.get("/search?q=apple").await;
+    assert!(
+        page.body.contains("Apples, raw, with skin"),
+        "saved food kept"
+    );
+    assert!(page.body.contains(&import_field("ciqual", "13039")));
+    let r = a.post("/foods/import", "source=cnf&provider_id=2").await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // The country travels with the JSON export.
+    let export = a.get("/settings/export.json").await;
+    assert!(export.body.contains("\"country\": \"CA\""));
+}
+
+#[tokio::test]
+async fn country_is_validated_and_offered_at_setup() {
+    let a = app().await;
+    let setup = a.get("/setup").await;
+    assert!(
+        setup
+            .body
+            .contains("<select id=\"country\" name=\"country\"")
+    );
+    let r = a
+        .post("/setup", "unit_system=metric&timezone=UTC&country=XX")
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("Choose a country from the list."));
+    let r = a
+        .post("/setup", "unit_system=metric&timezone=UTC&country=es")
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(korpus::profile::country(&a.db).await.unwrap(), Some("ES"));
+}
+
+#[tokio::test]
+async fn food_tables_are_imported_from_settings_uploads() {
+    use std::io::Write;
+
+    let a = app().await;
+    a.setup().await;
+    let mut w = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    w.start_file("FOOD NAME.csv", options).unwrap();
+    w.write_all(
+        b"FoodID,FoodCode,FoodGroupID,FoodSourceID,FoodDescription,FoodDescriptionF\r\n\
+2,2,22,20,Cheese souffle,Souffl\xe9 au fromage\r\n\
+4,4,22,20,\"Chop suey, with meat, canned\",\"Chop suey, avec viande, conserve\"\r\n",
+    )
+    .unwrap();
+    w.start_file("NUTRIENT AMOUNT.csv", options).unwrap();
+    w.write_all(b"FoodID,NutrientID,NutrientValue\r\n2,208,204\r\n2,203,9.54\r\n4,208,60\r\n")
+        .unwrap();
+    let zip = w.finish().unwrap().into_inner();
+
+    let r = a
+        .upload("/settings/datasets/cnf", &[("cnf-fcen-csv.zip", &zip)])
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    assert!(r.location.unwrap().contains("msg=dataset_imported"));
+    let settings = a.get("/settings").await;
+    assert!(settings.body.contains("2 foods, imported"));
+    assert!(
+        settings
+            .body
+            .contains("Search includes generic foods from Canadian Nutrient File.")
+    );
+    let page = a.get("/search?q=souffle").await;
+    assert!(page.body.contains("Cheese souffle"));
+
+    // A wrong file is explained next to its table and changes nothing.
+    let r = a
+        .upload("/settings/datasets/ciqual", &[("notes.txt", b"hello")])
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("id=\"dataset-ciqual-error\""));
+    assert!(r.body.contains("could not be opened"));
+    let r = a.upload("/settings/datasets/cofid", &[]).await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("Choose the downloaded file to import."));
+    assert_eq!(datasets::installed(&a.db).await.unwrap().len(), 1);
+
+    let r = a
+        .upload("/settings/datasets/nope", &[("x.zip", &zip)])
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
 }

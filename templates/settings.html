@@ -51,6 +51,38 @@
   </form>
 </section>
 
+<section class="section" aria-labelledby="datasets-heading">
+  <div class="section-head"><h2 id="datasets-heading">{{ lang.t("Food composition tables") }}</h2></div>
+  <p class="note">{% if let Some(name) = active_dataset %}{{ lang.f1("Search includes generic foods from {0}.", name) }}{% else %}{{ lang.t("No table is imported yet. Import one to find generic foods such as fruit, vegetables, meat or cooked dishes.") }}{% endif %}
+    {% if let Some(c) = country_name %}{{ lang.f1("Tables are listed in the order that best fits {0}; search uses the first one imported.", c) }}{% else %}{{ lang.t("Set your country above so search uses the table that fits it best.") }}{% endif %}</p>
+  {% for d in datasets %}
+  <article class="card dataset" aria-labelledby="dataset-{{ d.id }}">
+    <h3 id="dataset-{{ d.id }}">{{ d.name }} <span class="subtle">· {{ d.country }}</span></h3>
+    {% if d.active %}<p><span class="badge ok">{{ lang.t("Used for search") }}</span></p>{% else if d.preferred %}<p><span class="badge">{{ lang.t("Recommended for your country") }}</span></p>{% endif %}
+    <p class="row-sub">{% if let Some(st) = d.status %}{{ st }}{% else %}{{ lang.t("Not imported") }}{% endif %}</p>
+    <p class="attribution">{{ d.attribution }}</p>
+    {% if let Some(e) = d.error %}<p class="field-error" role="alert" id="dataset-{{ d.id }}-error">{{ e }}</p>{% endif %}
+    <details{% if d.error.is_some() || (d.preferred && d.status.is_none()) %} open{% endif %}>
+      <summary>{% if d.status.is_some() %}{{ lang.t("Update or remove") }}{% else %}{{ lang.t("Import") }}{% endif %}</summary>
+      <form method="post" action="/settings/datasets/{{ d.id }}" enctype="multipart/form-data">
+        <div class="field">
+          <label for="dataset-{{ d.id }}-file">{% if d.multiple %}{{ lang.t("Downloaded files") }}{% else %}{{ lang.t("Downloaded file") }}{% endif %}</label>
+          <input type="file" id="dataset-{{ d.id }}-file" name="file" accept="{{ d.accept }}" required{% if d.multiple %} multiple{% endif %} aria-describedby="dataset-{{ d.id }}-hint{% if d.error.is_some() %} dataset-{{ d.id }}-error{% endif %}"{% if d.error.is_some() %} aria-invalid="true"{% endif %}>
+          <p class="hint" id="dataset-{{ d.id }}-hint">{{ d.file_hint }} <a href="{{ d.download_url }}" rel="noopener noreferrer">{{ lang.t("Official download page") }}</a></p>
+        </div>
+        <button type="submit" class="block">{% if d.status.is_some() %}{{ lang.t("Import and replace") }}{% else %}{{ lang.t("Import") }}{% endif %}</button>
+      </form>
+      {% if d.status.is_some() %}
+      <form method="post" action="/settings/datasets/{{ d.id }}/remove" class="dataset-remove" data-confirm="{{ lang.f1("Remove {0}? Foods you already saved from it are kept.", d.name) }}">
+        <button type="submit" class="danger block">{{ lang.t("Remove table") }}</button>
+      </form>
+      {% endif %}
+    </details>
+  </article>
+  {% endfor %}
+  <p class="section-note">{{ lang.t("Files are read on this server, and searching these tables never contacts their publishers. Tables can also be imported from the command line, for example:") }} <code>korpus dataset import ciqual XML_2020_07_07.zip</code></p>
+</section>
+
 <section class="section" aria-labelledby="providers-heading">
   <div class="section-head"><h2 id="providers-heading">{{ lang.t("Food databases") }}</h2></div>
   <div class="card">

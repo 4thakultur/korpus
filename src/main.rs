@@ -10,7 +10,8 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> ExitCode {
     // `korpus healthcheck` lets container runtimes probe readiness without
     // shipping curl in the image.
-    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("healthcheck") {
         return healthcheck();
     }
     tracing_subscriber::fmt()
@@ -19,6 +20,16 @@ async fn main() -> ExitCode {
                 .unwrap_or_else(|_| EnvFilter::new("korpus=info,tower_http=warn")),
         )
         .init();
+
+    if args.first().map(String::as_str) == Some("dataset") {
+        return match dataset_command(&args[1..]).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     match run().await {
         Ok(()) => ExitCode::SUCCESS,
@@ -55,6 +66,83 @@ async fn run() -> Result<(), String> {
     db.close().await;
     tracing::info!("shut down cleanly");
     Ok(())
+}
+
+const DATASET_USAGE: &str = "usage:
+  korpus dataset list
+  korpus dataset import <usda|ciqual|cofid|afcd|cnf> <file>...
+  korpus dataset remove <usda|ciqual|cofid|afcd|cnf>";
+
+/// `korpus dataset …`: manages food composition tables from the command
+/// line, e.g. for scripted installs. Settings offers the same in the browser.
+async fn dataset_command(args: &[String]) -> Result<(), String> {
+    use korpus::datasets::{self, Dataset, UploadFile};
+
+    let config = Config::from_env().map_err(|e| format!("configuration error: {e}"))?;
+    let db = korpus::db::connect(&config.database_url)
+        .await
+        .map_err(|e| format!("could not open database: {e}"))?;
+    let dataset = |id: Option<&String>| {
+        id.and_then(|id| Dataset::parse(id))
+            .ok_or_else(|| DATASET_USAGE.to_string())
+    };
+    let lang = korpus::i18n::Lang::En;
+    let result = match args.first().map(String::as_str) {
+        Some("list") => {
+            let installed = datasets::installed(&db).await.map_err(|e| e.to_string())?;
+            for d in Dataset::ALL {
+                let status = match installed.iter().find(|i| i.dataset == d) {
+                    Some(i) => format!("{} foods, imported {}", i.food_count, i.imported_at),
+                    None => format!("not imported; download: {}", d.download_url()),
+                };
+                println!(
+                    "{:<7} {} ({}): {status}",
+                    d.id(),
+                    d.name(),
+                    d.country_name(lang)
+                );
+            }
+            Ok(())
+        }
+        Some("import") => {
+            let d = dataset(args.get(1))?;
+            let mut files = Vec::new();
+            for path in &args[2..] {
+                let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+                if bytes.len() > datasets::MAX_UPLOAD_BYTES {
+                    return Err(format!("{path}: file is too large"));
+                }
+                files.push(UploadFile {
+                    name: path.clone(),
+                    bytes,
+                });
+            }
+            let foods = tokio::task::spawn_blocking(move || d.parse_files(&files))
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| format!("{} ({e})", e.message(d, lang)))?;
+            let stored = datasets::replace(&db, d, &foods)
+                .await
+                .map_err(|e| e.to_string())?;
+            println!("Imported {stored} foods from {}.", d.name());
+            Ok(())
+        }
+        Some("remove") => {
+            let d = dataset(args.get(1))?;
+            if datasets::remove(&db, d).await.map_err(|e| e.to_string())? {
+                println!(
+                    "Removed {}. Foods already saved to your foods are kept.",
+                    d.name()
+                );
+            } else {
+                println!("{} was not imported.", d.name());
+            }
+            Ok(())
+        }
+        _ => Err(DATASET_USAGE.to_string()),
+    };
+    db.close().await;
+    result
 }
 
 async fn shutdown_signal() {

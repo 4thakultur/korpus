@@ -6,6 +6,15 @@
   <p class="hint" id="language-hint">{{ lang.t("Also the language in which food databases are searched and product names are shown.") }}</p>
   {% if let Some(e) = errors.get("language") %}<p class="field-error" id="language-error">{{ e }}</p>{% endif %}
 </div>
+<div class="field">
+  <label for="country">{{ lang.t("Country") }}</label>
+  <select id="country" name="country" autocomplete="country" aria-describedby="country-hint{% if errors.has("country") %} country-error{% endif %}" {% if errors.has("country") %}aria-invalid="true"{% endif %}>
+    <option value=""{% if form.country.is_empty() %} selected{% endif %}>{{ lang.t("Not set") }}</option>
+    {% for c in countries %}<option value="{{ c.code }}"{% if form.country == c.code %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+  </select>
+  <p class="hint" id="country-hint">{{ lang.t("Chooses the national food composition table that search uses. It is never sent anywhere.") }}</p>
+  {% if let Some(e) = errors.get("country") %}<p class="field-error" id="country-error">{{ e }}</p>{% endif %}
+</div>
 <fieldset id="unit_system" class="inner">
   <legend>{{ lang.t("Units for body weight and height") }}</legend>
   <div class="segmented">

@@ -19,6 +19,7 @@ use crate::forms::FieldErrors;
 use crate::i18n::Lang;
 use crate::nutrition::{Basis, Nutrient, Nutrients, check_value, kj_to_kcal};
 use crate::providers::ProviderFood;
+use crate::ranking::{self, Candidate, Query};
 use crate::units::{clean_text, parse_decimal};
 
 pub const SOURCE_USER: &str = "user";
@@ -193,11 +194,73 @@ async fn refresh_search_text(conn: &mut sqlx::SqliteConnection, id: i64) -> sqlx
     Ok(())
 }
 
+/// Version of [`normalize`] that stored search text was built with, kept in
+/// SQLite's `user_version`. Raise it whenever `normalize` changes.
+const SEARCH_TEXT_VERSION: i64 = 1;
+
+/// Rebuilds the search text of saved and table foods when it was built by
+/// an older [`normalize`]. Only this derived column is rewritten.
+pub async fn reindex_if_needed(db: &SqlitePool) -> sqlx::Result<()> {
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(db)
+        .await?;
+    if version >= SEARCH_TEXT_VERSION {
+        return Ok(());
+    }
+    let mut tx = db.begin().await?;
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM foods")
+        .fetch_all(&mut *tx)
+        .await?;
+    for id in &ids {
+        refresh_search_text(&mut tx, *id).await?;
+    }
+    type Names = (
+        String,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
+    let rows: Vec<Names> =
+        sqlx::query_as("SELECT dataset, code, name, name_en, name_fr, name_es FROM dataset_foods")
+            .fetch_all(&mut *tx)
+            .await?;
+    for (dataset, code, name, en, fr, es) in &rows {
+        let names: Vec<&str> = [Some(name), en.as_ref(), fr.as_ref(), es.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
+        sqlx::query("UPDATE dataset_foods SET search_text = ? WHERE dataset = ? AND code = ?")
+            .bind(search_text(&names, None, None))
+            .bind(dataset)
+            .bind(code)
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query(AssertSqlSafe(format!(
+        "PRAGMA user_version = {SEARCH_TEXT_VERSION}"
+    )))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    tracing::info!(
+        foods = ids.len(),
+        table_foods = rows.len(),
+        "rebuilt search index"
+    );
+    Ok(())
+}
+
 pub fn source_label(source: &str, lang: Lang) -> &'static str {
     match source {
         SOURCE_USER => lang.t("Created by you"),
         crate::providers::off::SOURCE => "Open Food Facts",
-        _ => lang.t("Other source"),
+        other => match crate::datasets::Dataset::parse(other) {
+            Some(d) => d.name(),
+            None => lang.t("Other source"),
+        },
     }
 }
 
@@ -419,19 +482,25 @@ pub fn validate(form: &FoodForm, lang: Lang) -> Result<FoodInput, FieldErrors> {
 }
 
 /// Lower-cases and folds common accents so "Müsli" matches "musli" and
-/// "muesli" matches "Muesli". Punctuation becomes whitespace.
+/// "muesli" matches "Muesli", and ligatures so "Œufs" matches "oeufs".
+/// Punctuation becomes whitespace. Changing it requires re-indexing stored
+/// search text (see [`reindex`]).
 pub fn normalize(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars().flat_map(char::to_lowercase) {
         let folded: &str = match c {
             'à' | 'á' | 'â' | 'ã' | 'å' | 'ā' => "a",
-            'ä' | 'æ' => "a",
+            'ä' => "a",
+            'æ' => "ae",
             'ç' | 'č' | 'ć' => "c",
             'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ę' => "e",
             'ì' | 'í' | 'î' | 'ï' => "i",
             'ñ' | 'ń' => "n",
             'ò' | 'ó' | 'ô' | 'õ' | 'ø' | 'ō' => "o",
-            'ö' | 'œ' => "o",
+            'ö' => "o",
+            'œ' => "oe",
+            // "Éco+" is spoken and typed "eco plus".
+            '+' => " plus ",
             'ù' | 'ú' | 'û' | 'ū' => "u",
             'ü' => "u",
             'ý' | 'ÿ' => "y",
@@ -472,7 +541,7 @@ pub fn search_text(names: &[&str], brand: Option<&str>, barcode: Option<&str>) -
     s
 }
 
-fn escape_like(s: &str) -> String {
+pub fn escape_like(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         if matches!(c, '%' | '_' | '\\') {
@@ -483,26 +552,24 @@ fn escape_like(s: &str) -> String {
     out
 }
 
-/// Ranking score; lower is better.
-fn rank(food: &Food, query: &str, tokens: &[&str]) -> u8 {
-    if food.barcode.as_deref() == Some(query) {
-        return 0;
+/// How many diary entries use each of the given foods.
+async fn usage_counts(db: &SqlitePool, ids: &[i64]) -> AppResult<HashMap<i64, u64>> {
+    let mut map = HashMap::new();
+    for chunk in ids.chunks(500) {
+        let placeholders = vec!["?"; chunk.len()].join(",");
+        let sql = format!(
+            "SELECT food_id, COUNT(*) FROM diary_entries WHERE food_id IN ({placeholders})
+             GROUP BY food_id"
+        );
+        let mut q = sqlx::query_as::<_, (i64, i64)>(AssertSqlSafe(sql));
+        for id in chunk {
+            q = q.bind(id);
+        }
+        for (id, n) in q.fetch_all(db).await? {
+            map.insert(id, n.max(0) as u64);
+        }
     }
-    let name = normalize(&food.name);
-    if name == query {
-        return 1;
-    }
-    if name.starts_with(query) {
-        return 2;
-    }
-    let words: Vec<&str> = name.split(' ').collect();
-    if tokens
-        .iter()
-        .all(|t| words.iter().any(|w| w.starts_with(t)))
-    {
-        return 3;
-    }
-    4
+    Ok(map)
 }
 
 pub struct SearchPage {
@@ -534,24 +601,41 @@ pub async fn search(
         return Ok(SearchPage { foods, has_more });
     }
 
-    let tokens: Vec<&str> = q.split(' ').take(6).collect();
-    let mut sql = format!("SELECT {FOOD_COLUMNS} FROM foods WHERE ");
-    for (i, _) in tokens.iter().enumerate() {
-        if i > 0 {
-            sql.push_str(" AND ");
-        }
-        sql.push_str("search_text LIKE ? ESCAPE '\\'");
-    }
-    sql.push_str(" ORDER BY updated_at DESC LIMIT ?");
+    let query = Query::new(&q);
+    let terms = query.retrieval_terms();
+    // Saved foods are few, so any part of a word finds them ("apple" finds
+    // "Pineapple"); ranking puts whole-word matches first.
+    let sql = format!(
+        "SELECT {FOOD_COLUMNS} FROM foods WHERE {} ORDER BY updated_at DESC LIMIT ?",
+        vec!["search_text LIKE ? ESCAPE '\\'"; terms.len()].join(" AND ")
+    );
     // Only constant SQL and `?` placeholders are concatenated; values are bound.
     let mut stmt = sqlx::query_as::<_, Food>(AssertSqlSafe(sql));
-    for t in &tokens {
+    for t in &terms {
         stmt = stmt.bind(format!("%{}%", escape_like(t)));
     }
     let foods = stmt.bind(SEARCH_CANDIDATES).fetch_all(db).await?;
-    let mut foods = with_names(db, foods, Some(lang)).await?;
+    let foods = with_names(db, foods, Some(lang)).await?;
 
-    foods.sort_by_cached_key(|f| (rank(f, &q, &tokens), f.name.len(), f.name.to_lowercase()));
+    let ids: Vec<i64> = foods.iter().map(|f| f.id).collect();
+    let uses = usage_counts(db, &ids).await?;
+    let foods = ranking::sort(&query, foods, |f| Candidate {
+        name: &f.name,
+        other_names: f
+            .names
+            .iter()
+            .map(|n| n.name.as_str())
+            .filter(|n| *n != f.name)
+            .collect(),
+        brands: f.brand.as_slice(),
+        popularity: uses.get(&f.id).copied().unwrap_or(0),
+        has_energy: f.energy_kcal.is_some(),
+    });
+    // An exact barcode match comes first whatever its name.
+    let (mut foods, rest): (Vec<Food>, Vec<Food>) = foods
+        .into_iter()
+        .partition(|f| f.barcode.as_deref() == Some(q.as_str()));
+    foods.extend(rest);
     let has_more = foods.len() > offset + PAGE_SIZE;
     let foods = foods.into_iter().skip(offset).take(PAGE_SIZE).collect();
     Ok(SearchPage { foods, has_more })
@@ -959,6 +1043,8 @@ mod tests {
         assert_eq!(normalize("Crème Fraîche"), "creme fraiche");
         assert_eq!(normalize("Weißbrot"), "weissbrot");
         assert_eq!(normalize("50%"), "50");
+        assert_eq!(normalize("Œufs, cœur"), "oeufs coeur");
+        assert_eq!(normalize("Éco+"), "eco plus");
     }
 
     #[test]
@@ -971,5 +1057,40 @@ mod tests {
         assert_eq!(format_input(59.755_975_143_403_44), "59.756");
         assert_eq!(format_input(12.0), "12");
         assert_eq!(format_input(0.5), "0.5");
+    }
+
+    #[tokio::test]
+    async fn reindex_rebuilds_stale_search_text() {
+        let db = crate::db::connect_memory().await.unwrap();
+        let mut form = form();
+        form.name = "Œufs plein air".into();
+        let input = validate(&form, Lang::Fr).unwrap();
+        let id = create(&db, &input).await.unwrap();
+        // As written by the previous normalization, which folded "œ" to "o".
+        sqlx::query("UPDATE foods SET search_text = 'oufs plein air' WHERE id = ?")
+            .bind(id)
+            .execute(&db)
+            .await
+            .unwrap();
+        sqlx::query("PRAGMA user_version = 0")
+            .execute(&db)
+            .await
+            .unwrap();
+        assert!(
+            search(&db, "oeufs", 1, Lang::Fr)
+                .await
+                .unwrap()
+                .foods
+                .is_empty()
+        );
+
+        reindex_if_needed(&db).await.unwrap();
+        let found = search(&db, "oeufs", 1, Lang::Fr).await.unwrap();
+        assert_eq!(found.foods.len(), 1);
+        let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        assert_eq!(version, SEARCH_TEXT_VERSION);
     }
 }

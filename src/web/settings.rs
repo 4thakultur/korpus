@@ -1,8 +1,9 @@
-//! First-run setup, settings, export, backup and import.
+//! First-run setup, settings, export, backup, import and food composition
+//! tables.
 
 use askama::Template;
 use axum::Form;
-use axum::extract::{Multipart, Query, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -12,6 +13,8 @@ use super::{
     render_status, see_other,
 };
 use crate::backup::{self, Export, MAX_IMPORT_BYTES};
+use crate::countries::{self, CountryOption};
+use crate::datasets::{self, Dataset, UploadFile};
 use crate::error::{AppError, AppResult};
 use crate::forms::FieldErrors;
 use crate::i18n::Lang;
@@ -25,12 +28,15 @@ pub struct ProfileForm {
     pub timezone: String,
     /// Language code, or empty to follow the browser.
     pub language: String,
+    /// Country code, or empty when not set.
+    pub country: String,
 }
 
 struct ValidProfile {
     units: UnitSystem,
     timezone: String,
     language: Option<Lang>,
+    country: Option<&'static str>,
 }
 
 fn validate(form: &ProfileForm, lang: Lang) -> Result<ValidProfile, FieldErrors> {
@@ -53,11 +59,19 @@ fn validate(form: &ProfileForm, lang: Lang) -> Result<ValidProfile, FieldErrors>
     if language.is_none() {
         errors.add("language", lang.t("Choose a language."));
     }
-    match (units, language) {
-        (Some(units), Some(language)) if errors.is_empty() => Ok(ValidProfile {
+    let country = match form.country.trim() {
+        "" => Some(None),
+        code => countries::parse(code).map(Some),
+    };
+    if country.is_none() {
+        errors.add("country", lang.t("Choose a country from the list."));
+    }
+    match (units, language, country) {
+        (Some(units), Some(language), Some(country)) if errors.is_empty() => Ok(ValidProfile {
             units,
             timezone: tz.to_string(),
             language,
+            country,
         }),
         _ => Err(errors),
     }
@@ -100,6 +114,7 @@ pub struct SetupPage {
     pub form: ProfileForm,
     pub errors: FieldErrors,
     pub languages: Vec<LanguageOption>,
+    pub countries: Vec<CountryOption>,
 }
 
 pub async fn setup_form(State(state): State<AppState>) -> AppResult<Response> {
@@ -116,9 +131,11 @@ pub async fn setup_form(State(state): State<AppState>) -> AppResult<Response> {
             unit_system: "metric".into(),
             timezone: state.config.default_timezone.clone(),
             language: p.language.unwrap_or_default(),
+            country: p.country.unwrap_or_default(),
         },
         errors: FieldErrors::default(),
         languages: language_options(lang),
+        countries: countries::options(lang),
     };
     Ok(render(&page)?.into_response())
 }
@@ -131,7 +148,7 @@ pub async fn setup_save(
     let lang = form_lang(&form, &headers);
     match validate(&form, lang) {
         Ok(v) => {
-            profile::save(&state.db, v.units, &v.timezone, v.language).await?;
+            profile::save(&state.db, v.units, &v.timezone, v.language, v.country).await?;
             Ok(see_other("/goals?setup=1"))
         }
         Err(errors) => render_status(
@@ -143,9 +160,73 @@ pub async fn setup_save(
                 form,
                 errors,
                 languages: language_options(lang),
+                countries: countries::options(lang),
             },
         ),
     }
+}
+
+/// One food composition table in Settings.
+pub struct DatasetView {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub country: &'static str,
+    pub attribution: &'static str,
+    pub download_url: &'static str,
+    pub file_hint: &'static str,
+    pub accept: &'static str,
+    pub multiple: bool,
+    /// Number of foods and import date, when imported.
+    pub status: Option<String>,
+    /// Search uses this table.
+    pub active: bool,
+    /// The preferred table for the profile's country.
+    pub preferred: bool,
+    /// Why the last upload for this table failed.
+    pub error: Option<String>,
+}
+
+/// A failed dataset upload, shown next to its table.
+pub struct DatasetError {
+    pub dataset: Dataset,
+    pub message: String,
+}
+
+async fn dataset_views(
+    state: &AppState,
+    lang: Lang,
+    country: Option<&str>,
+    error: Option<DatasetError>,
+) -> AppResult<(Vec<DatasetView>, Option<&'static str>)> {
+    let installed = datasets::installed(&state.db).await?;
+    let active = datasets::choose(country, &installed);
+    let order = datasets::preference(country);
+    let views = order
+        .iter()
+        .map(|d| DatasetView {
+            id: d.id(),
+            name: d.name(),
+            country: d.country_name(lang),
+            attribution: d.attribution(lang),
+            download_url: d.download_url(),
+            file_hint: d.file_hint(lang),
+            accept: d.accept(),
+            multiple: d.multiple_files(),
+            status: installed.iter().find(|i| i.dataset == *d).map(|i| {
+                lang.f(
+                    "{0} foods, imported {1}",
+                    &[&i.food_count, &i.imported_at.get(..10).unwrap_or("")],
+                )
+            }),
+            active: active == Some(*d),
+            preferred: country.is_some() && order[0] == *d,
+            error: error
+                .as_ref()
+                .filter(|e| e.dataset == *d)
+                .map(|e| e.message.clone()),
+        })
+        .collect();
+    Ok((views, active.map(Dataset::name)))
 }
 
 pub struct ProviderInfo {
@@ -167,6 +248,12 @@ pub struct SettingsPage {
     pub providers: Vec<ProviderInfo>,
     pub version: &'static str,
     pub languages: Vec<LanguageOption>,
+    pub countries: Vec<CountryOption>,
+    /// The saved country's name, if any.
+    pub country_name: Option<&'static str>,
+    pub datasets: Vec<DatasetView>,
+    /// Name of the table search uses, if any is imported.
+    pub active_dataset: Option<&'static str>,
     pub theme: Theme,
     pub themes: [Theme; 3],
 }
@@ -178,8 +265,11 @@ async fn settings_page(
     errors: FieldErrors,
     message: Option<&'static str>,
     import_error: Option<String>,
+    dataset_error: Option<DatasetError>,
 ) -> AppResult<SettingsPage> {
     let p = profile::load(&state.db).await?;
+    let country = p.country();
+    let (datasets, active_dataset) = dataset_views(state, lang, country, dataset_error).await?;
     Ok(SettingsPage {
         lang,
         title: lang.t("Settings").into(),
@@ -188,6 +278,7 @@ async fn settings_page(
             unit_system: p.unit_system,
             timezone: p.timezone,
             language: p.language.unwrap_or_default(),
+            country: p.country.clone().unwrap_or_default(),
         }),
         errors,
         message,
@@ -204,6 +295,10 @@ async fn settings_page(
             .collect(),
         version: env!("CARGO_PKG_VERSION"),
         languages: language_options(lang),
+        countries: countries::options(lang),
+        country_name: country.and_then(|c| countries::name(c, lang)),
+        datasets,
+        active_dataset,
         theme: current_theme(),
         themes: Theme::ALL,
     })
@@ -240,6 +335,7 @@ pub async fn page(State(state): State<AppState>, Query(q): Query<MsgQuery>) -> A
         FieldErrors::default(),
         flash_message(q.msg.as_deref(), lang),
         None,
+        None,
     )
     .await?;
     Ok(render(&page)?.into_response())
@@ -253,11 +349,11 @@ pub async fn save(
     let lang = form_lang(&form, &headers);
     match validate(&form, lang) {
         Ok(v) => {
-            profile::save(&state.db, v.units, &v.timezone, v.language).await?;
+            profile::save(&state.db, v.units, &v.timezone, v.language, v.country).await?;
             Ok(see_other("/settings?msg=settings_saved"))
         }
         Err(errors) => {
-            let page = settings_page(&state, lang, Some(form), errors, None, None).await?;
+            let page = settings_page(&state, lang, Some(form), errors, None, None, None).await?;
             render_status(StatusCode::UNPROCESSABLE_ENTITY, &page)
         }
     }
@@ -357,9 +453,104 @@ pub async fn import(State(state): State<AppState>, multipart: Multipart) -> AppR
     match result {
         Ok(()) => Ok(see_other("/settings?msg=imported")),
         Err(msg) => {
-            let page =
-                settings_page(&state, lang, None, FieldErrors::default(), None, Some(msg)).await?;
+            let page = settings_page(
+                &state,
+                lang,
+                None,
+                FieldErrors::default(),
+                None,
+                Some(msg),
+                None,
+            )
+            .await?;
             render_status(StatusCode::UNPROCESSABLE_ENTITY, &page)
         }
     }
+}
+
+fn dataset_from_path(id: &str) -> AppResult<Dataset> {
+    Dataset::parse(id).ok_or(AppError::NotFound)
+}
+
+/// Every uploaded file of a dataset form, within the size limit.
+async fn read_dataset_upload(
+    mut multipart: Multipart,
+    lang: Lang,
+) -> Result<Vec<UploadFile>, String> {
+    let unreadable = || {
+        lang.t("The upload could not be read (is it too large?).")
+            .to_string()
+    };
+    let mut files = Vec::new();
+    let mut total = 0;
+    while let Some(field) = multipart.next_field().await.map_err(|_| unreadable())? {
+        if field.name() != Some("file") {
+            continue;
+        }
+        let name = field.file_name().unwrap_or("upload").to_string();
+        let bytes = field.bytes().await.map_err(|_| unreadable())?;
+        total += bytes.len();
+        if total > datasets::MAX_UPLOAD_BYTES {
+            return Err(lang.t("The file is too large.").into());
+        }
+        if !bytes.is_empty() {
+            files.push(UploadFile {
+                name,
+                bytes: bytes.to_vec(),
+            });
+        }
+    }
+    Ok(files)
+}
+
+/// Imports (or replaces) a food composition table from the publisher's
+/// file(s). Parsing runs on a blocking thread; the previous version stays
+/// in place if anything fails.
+pub async fn import_dataset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    multipart: Multipart,
+) -> AppResult<Response> {
+    let lang = current_lang();
+    let dataset = dataset_from_path(&id)?;
+    let parsed = match read_dataset_upload(multipart, lang).await {
+        Ok(files) => tokio::task::spawn_blocking(move || dataset.parse_files(&files))
+            .await
+            .map_err(|e| AppError::Internal(format!("dataset import task: {e}")))?
+            .map_err(|e| {
+                tracing::warn!(dataset = dataset.id(), error = %e, "dataset import rejected");
+                e.message(dataset, lang)
+            }),
+        Err(msg) => Err(msg),
+    };
+    match parsed {
+        Ok(foods) => {
+            let stored = datasets::replace(&state.db, dataset, &foods).await?;
+            tracing::info!(dataset = dataset.id(), foods = stored, "dataset imported");
+            Ok(see_other("/settings?msg=dataset_imported#datasets-heading"))
+        }
+        Err(message) => {
+            let page = settings_page(
+                &state,
+                lang,
+                None,
+                FieldErrors::default(),
+                None,
+                None,
+                Some(DatasetError { dataset, message }),
+            )
+            .await?;
+            render_status(StatusCode::UNPROCESSABLE_ENTITY, &page)
+        }
+    }
+}
+
+/// Removes an imported table. Foods already saved from it are kept.
+pub async fn remove_dataset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> AppResult<Response> {
+    let dataset = dataset_from_path(&id)?;
+    datasets::remove(&state.db, dataset).await?;
+    Ok(see_other("/settings?msg=dataset_removed#datasets-heading"))
 }

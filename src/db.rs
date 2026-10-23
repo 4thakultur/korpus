@@ -9,7 +9,8 @@ use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, S
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 /// Opens (creating if needed) the database and applies pending migrations.
-/// Migrations only ever add to the schema; startup never deletes data.
+/// Migrations only ever add to the schema; startup never deletes data. Search
+/// text is rebuilt when it was built with an older normalization.
 pub async fn connect(url: &str) -> Result<SqlitePool, sqlx::Error> {
     let opts = SqliteConnectOptions::from_str(url)?
         .create_if_missing(true)
@@ -27,6 +28,7 @@ pub async fn connect(url: &str) -> Result<SqlitePool, sqlx::Error> {
         .connect_with(opts)
         .await?;
     MIGRATOR.run(&pool).await?;
+    crate::foods::reindex_if_needed(&pool).await?;
     Ok(pool)
 }
 
@@ -39,6 +41,7 @@ pub async fn connect_memory() -> Result<SqlitePool, sqlx::Error> {
         .connect_with(opts)
         .await?;
     MIGRATOR.run(&pool).await?;
+    crate::foods::reindex_if_needed(&pool).await?;
     Ok(pool)
 }
 

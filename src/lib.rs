@@ -2,6 +2,8 @@
 
 pub mod backup;
 pub mod config;
+pub mod countries;
+pub mod datasets;
 pub mod db;
 pub mod diary;
 pub mod error;
@@ -12,6 +14,7 @@ pub mod i18n;
 pub mod nutrition;
 pub mod profile;
 pub mod providers;
+pub mod ranking;
 pub mod units;
 pub mod web;
 pub mod weight;

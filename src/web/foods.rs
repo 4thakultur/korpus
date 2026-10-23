@@ -191,7 +191,7 @@ pub async fn detail_page(
                 .unwrap_or(lang.t("Product data © Open Food Facts contributors (ODbL).")),
         )
     } else {
-        None
+        crate::datasets::Dataset::parse(&food.source).map(|d| d.attribution(lang))
     };
     let data = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_default();
     let amount = if amount.trim().is_empty() {
@@ -539,6 +539,9 @@ pub async fn import(
 ) -> AppResult<Response> {
     let lang = current_lang();
     let ctx = LogContext::from_parts(Some(&form.date), Some(&form.meal));
+    if let Some(dataset) = crate::datasets::Dataset::parse(&form.source) {
+        return import_from_dataset(&state, dataset, &form.provider_id, ctx, lang).await;
+    }
     let provider = state
         .providers
         .find(&form.source)
@@ -588,6 +591,47 @@ pub async fn import(
                 },
             )
         }
+    }
+}
+
+/// Saves a food from a local food composition table (read from the table,
+/// never from the form) and continues to its detail page.
+async fn import_from_dataset(
+    state: &AppState,
+    dataset: crate::datasets::Dataset,
+    code: &str,
+    ctx: LogContext,
+    lang: Lang,
+) -> AppResult<Response> {
+    if code.is_empty() || code.len() > 64 {
+        return Err(AppError::BadRequest(
+            lang.t("Invalid product identifier.").into(),
+        ));
+    }
+    match crate::datasets::get(&state.db, dataset, code, lang).await? {
+        Some(p) => {
+            let id = foods::upsert_from_provider(&state.db, &p, lang).await?;
+            let url = ctx.url(&format!("/foods/{id}"));
+            let sep = if url.contains('?') { "&" } else { "?" };
+            Ok(see_other(&format!("{url}{sep}msg=imported_food")))
+        }
+        // The table was replaced or removed since the search.
+        None => render_status(
+            StatusCode::NOT_FOUND,
+            &NoticePage {
+                lang,
+                title: lang.t("Product not found").into(),
+                nav: "foods",
+                message: lang.f(
+                    "{0} no longer has this product. You can create it manually.",
+                    &[&dataset.name()],
+                ),
+                links: vec![
+                    (lang.t("Create food manually").into(), ctx.url("/foods/new")),
+                    (lang.t("Back to search").into(), ctx.url("/search")),
+                ],
+            },
+        ),
     }
 }
 
