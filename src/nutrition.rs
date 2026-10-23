@@ -297,6 +297,11 @@ pub fn fmt_g(v: f64) -> String {
     format!("{:.1}", round_half_away(v, 1))
 }
 
+/// Whole grams, for compact summaries such as the diary's macro rings.
+pub fn fmt_g_whole(v: f64) -> String {
+    format!("{:.0}", round_half_away(v, 0))
+}
+
 pub fn fmt_opt_kcal(v: Option<f64>) -> String {
     v.map(fmt_kcal).unwrap_or_else(|| "–".to_string())
 }
@@ -445,6 +450,8 @@ mod tests {
         assert_eq!(fmt_kcal(-0.2), "0");
         assert_eq!(fmt_g(14.25), "14.3");
         assert_eq!(fmt_g(0.04), "0.0");
+        assert_eq!(fmt_g_whole(33.8), "34");
+        assert_eq!(fmt_g_whole(0.4), "0");
         assert_eq!(fmt_opt_g(None), "–");
         assert_eq!(fmt_amount(150.0), "150");
         assert_eq!(fmt_amount(12.5), "12.5");

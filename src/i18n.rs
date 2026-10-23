@@ -392,6 +392,11 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "La fecha debe ser una fecha válida (AAAA-MM-DD).",
     ),
     ("Today", "Aujourd'hui", "Hoy"),
+    ("Yesterday", "Hier", "Ayer"),
+    ("Tomorrow", "Demain", "Mañana"),
+    ("Choose a date", "Choisir une date", "Elegir una fecha"),
+    ("Previous month", "Mois précédent", "Mes anterior"),
+    ("Next month", "Mois suivant", "Mes siguiente"),
     (
         "Choose a valid date.",
         "Choisissez une date valide.",
@@ -780,11 +785,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
     ("F", "L", "G"),
     ("values missing", "valeurs manquantes", "faltan valores"),
     ("of {0} kcal", "sur {0} kcal", "de {0} kcal"),
-    (
-        "{0} compared with goal",
-        "{0} par rapport à l'objectif",
-        "{0} respecto al objetivo",
-    ),
     (
         "Delete {0} from {1}?",
         "Supprimer {0} de {1} ?",

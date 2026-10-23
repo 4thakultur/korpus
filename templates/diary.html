@@ -1,20 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
 {% include "_flash.html" %}
-<header class="page-head">
-  {% if is_today %}<p class="eyebrow">{{ date_label }}</p>{% endif %}
-  <h1>{% if is_today %}{{ lang.t("Today") }}{% else %}{{ date_label }}{% endif %}</h1>
+<header class="page-head day-head">
+  <p class="eyebrow">{{ date_label }}</p>
+  <div class="day-title">
+    <h1>{{ title }}</h1>
+    <div class="day-nav">
+      <form method="get" action="/diary" class="date-pick">
+        <label for="date" class="visually-hidden">{{ lang.t("Diary date") }}</label>
+        <input type="date" id="date" name="date" value="{{ date_iso }}" required data-autosubmit>
+        <button type="button" class="circle-button js-only" data-date-picker data-today="{{ today_iso }}" data-t-today="{{ lang.t("Today") }}" data-t-prev-month="{{ lang.t("Previous month") }}" data-t-next-month="{{ lang.t("Next month") }}" aria-label="{{ lang.t("Choose a date") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
+        <button type="submit" class="js-hidden pill">{{ lang.t("Go") }}</button>
+      </form>
+      <a class="circle-button" href="/diary?date={{ prev_iso }}" rel="prev" aria-label="{{ lang.t("Previous day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"/></svg></a>
+      <a class="circle-button" href="/diary?date={{ next_iso }}" rel="next" aria-label="{{ lang.t("Next day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg></a>
+    </div>
+  </div>
 </header>
-
-<div class="day-nav">
-  <a class="circle-button" href="/diary?date={{ prev_iso }}" rel="prev" aria-label="{{ lang.t("Previous day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"/></svg></a>
-  <form method="get" action="/diary" class="date-jump">
-    <label for="date" class="visually-hidden">{{ lang.t("Diary date") }}</label>
-    <input type="date" id="date" name="date" value="{{ date_iso }}" required data-autosubmit>
-    <button type="submit" class="js-hidden pill">{{ lang.t("Go") }}</button>
-  </form>
-  <a class="circle-button" href="/diary?date={{ next_iso }}" rel="next" aria-label="{{ lang.t("Next day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg></a>
-</div>
 {% if !is_today %}<p class="today-link"><a class="button pill" href="/diary?date={{ today_iso }}">{{ lang.t("Back to today") }}</a></p>{% endif %}
 
 <section class="card summary" aria-labelledby="summary-heading">
@@ -40,10 +42,12 @@
   <dl class="macros">
   {% for m in macros %}
     <div class="c-{{ m.key }}">
-      <dt><span class="dot" aria-hidden="true"></span>{{ m.label }}</dt>
-      <dd><strong>{{ m.consumed }}</strong>{% if let Some(g) = m.goal %} / {{ g }}{% endif %} g
-        {% if m.goal.is_some() %}<progress max="100" value="{{ m.pct }}" aria-label="{{ lang.f1("{0} compared with goal", m.label) }}">{{ m.pct }}%</progress>{% endif %}
-      </dd>
+      <svg class="mini-ring" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+        <circle class="ring-track" cx="22" cy="22" r="18"></circle>
+        {% if m.pct > 0 %}<circle class="ring-value" cx="22" cy="22" r="18" pathLength="100" stroke-dasharray="{{ m.pct }} 100" transform="rotate(-90 22 22)"></circle>{% endif %}
+      </svg>
+      <dt>{{ m.label }}</dt>
+      <dd><strong>{{ m.consumed }}</strong>{% if let Some(g) = m.goal %} / {{ g }}{% endif %} g</dd>
     </div>
   {% endfor %}
   </dl>
@@ -51,46 +55,49 @@
   <a class="button primary block" href="{{ add_url }}"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>{{ lang.t("Add food") }}</a>
 </section>
 
+<div class="meals">
 {% for meal in meals %}
-<section class="section meal" id="meal-{{ meal.key }}" aria-labelledby="h-{{ meal.key }}">
-  <div class="section-head">
-    <h2 id="h-{{ meal.key }}">{{ meal.label }}</h2>
-    <p class="meal-total"><strong>{{ meal.kcal }}</strong> kcal{% if meal.incomplete %} <span class="badge">{{ lang.t("incomplete") }}</span>{% endif %}</p>
+<section class="meal-card" id="meal-{{ meal.key }}" aria-labelledby="h-{{ meal.key }}">
+  <div class="meal-head">
+    <h2 id="h-{{ meal.key }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+      {%- if meal.key == "breakfast" %}<path d="M12 3v3M5.6 8.6 7 10M18.4 8.6 17 10M3 17h18M7 17a5 5 0 0 1 10 0M8 21h8"/>
+      {%- else if meal.key == "lunch" %}<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+      {%- else if meal.key == "dinner" %}<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>
+      {%- else %}<path d="M12 7c-1.5-1-5-1.5-6.5 1.5S5 16 7.5 19c1.3 1.6 2.7 2 4.5 1 1.8 1 3.2.6 4.5-1 2.5-3 3.5-7.5 2-10.5S13.5 6 12 7z"/><path d="M12 7c0-2 1-3.5 3-4"/>
+      {%- endif %}</svg>{{ meal.label }}</h2>
+    <a class="meal-add" href="{{ meal.add_url }}" aria-label="{{ meal.add_label }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></a>
   </div>
-  <div class="list">
+  <p class="meal-kcal"><strong>{{ meal.kcal }}</strong> kcal{% if meal.incomplete %} <span class="badge">{{ lang.t("incomplete") }}</span>{% endif %}</p>
   {% if meal.entries.is_empty() %}
-    <p class="list-empty">{{ lang.t("Nothing logged.") }}</p>
+  <p class="meal-empty">{{ lang.t("Nothing logged.") }}</p>
   {% else %}
-    <ul>
-    {% for e in meal.entries %}
-      <li class="row entry">
-        <a class="entry-main row-main" href="/diary/entries/{{ e.id }}/edit">
-          <span class="entry-name row-title">{{ e.name }}</span>
-          <span class="row-sub">{% if !e.brand.is_empty() %}{{ e.brand }} · {% endif %}{{ e.amount }}{% if e.missing %} <span class="badge">{{ lang.t("values missing") }}</span>{% endif %}</span>
-          <span class="macro-line">
-            <span class="c-protein"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("P") }}</b> {{ e.protein }} g</span>
-            <span class="c-carbs"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("C") }}</b> {{ e.carbs }} g</span>
-            <span class="c-fat"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("F") }}</b> {{ e.fat }} g</span>
-          </span>
-        </a>
-        <span class="entry-kcal"><strong>{{ e.kcal }}</strong> kcal</span>
-        <form method="post" action="/diary/entries/{{ e.id }}/delete" class="inline" data-confirm="{{ lang.f2("Delete {0} from {1}?", e.name, meal.label) }}">
-          <button type="submit" class="icon-button" aria-label="{{ lang.f1("Delete {0}", e.name) }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
-        </form>
-      </li>
-    {% endfor %}
-      <li class="row meal-subtotal">
-        <span class="visually-hidden">{{ meal.label }}:</span>
+  <p class="macro-line meal-macros">
+    <span class="visually-hidden">{{ meal.label }}:</span>
+    <span class="c-protein"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("P") }}</b> {{ meal.protein }} g</span>
+    <span class="c-carbs"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("C") }}</b> {{ meal.carbs }} g</span>
+    <span class="c-fat"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("F") }}</b> {{ meal.fat }} g</span>
+  </p>
+  <ul class="meal-entries">
+  {% for e in meal.entries %}
+    <li class="row entry">
+      <a class="entry-main row-main" href="/diary/entries/{{ e.id }}/edit">
+        <span class="entry-name row-title">{{ e.name }}</span>
+        <span class="row-sub">{% if !e.brand.is_empty() %}{{ e.brand }} · {% endif %}{{ e.amount }}{% if e.missing %} <span class="badge">{{ lang.t("values missing") }}</span>{% endif %}</span>
         <span class="macro-line">
-          <span class="c-protein"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("P") }}</b> {{ meal.protein }} g</span>
-          <span class="c-carbs"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("C") }}</b> {{ meal.carbs }} g</span>
-          <span class="c-fat"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("F") }}</b> {{ meal.fat }} g</span>
+          <span class="c-protein"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("P") }}</b> {{ e.protein }} g</span>
+          <span class="c-carbs"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("C") }}</b> {{ e.carbs }} g</span>
+          <span class="c-fat"><span class="dot" aria-hidden="true"></span><b>{{ lang.t("F") }}</b> {{ e.fat }} g</span>
         </span>
-      </li>
-    </ul>
+      </a>
+      <span class="entry-kcal"><strong>{{ e.kcal }}</strong> kcal</span>
+      <form method="post" action="/diary/entries/{{ e.id }}/delete" class="inline" data-confirm="{{ lang.f2("Delete {0} from {1}?", e.name, meal.label) }}">
+        <button type="submit" class="icon-button" aria-label="{{ lang.f1("Delete {0}", e.name) }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17"/></svg></button>
+      </form>
+    </li>
+  {% endfor %}
+  </ul>
   {% endif %}
-    <a class="row add-row" href="{{ meal.add_url }}"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path class="plus-mark" d="M12 7.5v9M7.5 12h9"/></svg>{{ meal.add_label }}</a>
-  </div>
 </section>
 {% endfor %}
+</div>
 {% endblock %}

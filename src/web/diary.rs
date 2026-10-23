@@ -16,8 +16,10 @@ use crate::diary::{self, Entry, Meal, check_amount};
 use crate::error::{AppError, AppResult};
 use crate::forms::FieldErrors;
 use crate::i18n::Lang;
-use crate::nutrition::{Nutrient, fmt_amount, fmt_g, fmt_kcal, fmt_opt_g, fmt_opt_kcal};
-use crate::units::{fmt_date_long, parse_date, parse_decimal, today_in};
+use crate::nutrition::{
+    Nutrient, fmt_amount, fmt_g, fmt_g_whole, fmt_kcal, fmt_opt_g, fmt_opt_kcal,
+};
+use crate::units::{fmt_date_long, fmt_date_short, parse_date, parse_decimal, today_in};
 use crate::{foods, goals, profile};
 
 pub async fn root(State(state): State<AppState>) -> AppResult<Response> {
@@ -146,8 +148,8 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
     let macro_view = |n: Nutrient, consumed: f64, goal: Option<f64>| MacroView {
         key: n.key(),
         label: n.label(lang),
-        consumed: lang.num(fmt_g(consumed)),
-        goal: goal.map(|g| lang.num(fmt_g(g))),
+        consumed: fmt_g_whole(consumed),
+        goal: goal.map(fmt_g_whole),
         pct: goal.map(|g| pct(consumed, g)).unwrap_or(0),
     };
     let macros = vec![
@@ -179,11 +181,7 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
 
     let page = DayPage {
         lang,
-        title: if date == today {
-            lang.t("Today").into()
-        } else {
-            fmt_date_long(date, lang)
-        },
+        title: day_title(date, today, lang),
         nav: "diary",
         date_iso: date.to_string(),
         date_label: fmt_date_long(date, lang),
@@ -207,6 +205,19 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
         .url("/search"),
     };
     Ok(render(&page)?.into_response())
+}
+
+/// "Today", "Yesterday" or "Tomorrow" near the current day, else the short date.
+fn day_title(date: Date, today: Date, lang: Lang) -> String {
+    if date == today {
+        lang.t("Today").into()
+    } else if date == shift(today, -1) {
+        lang.t("Yesterday").into()
+    } else if date == shift(today, 1) {
+        lang.t("Tomorrow").into()
+    } else {
+        fmt_date_short(date, lang)
+    }
 }
 
 fn shift(d: Date, days: i32) -> Date {
@@ -428,5 +439,23 @@ mod tests {
         assert_eq!(pct(500.0, 2000.0), 25);
         assert_eq!(pct(3000.0, 2000.0), 100);
         assert_eq!(pct(10.0, 0.0), 0);
+    }
+
+    #[test]
+    fn nearby_days_get_relative_titles() {
+        let today = jiff::civil::date(2026, 3, 1);
+        assert_eq!(day_title(today, today, Lang::Fr), "Aujourd'hui");
+        assert_eq!(
+            day_title(jiff::civil::date(2026, 2, 28), today, Lang::En),
+            "Yesterday"
+        );
+        assert_eq!(
+            day_title(jiff::civil::date(2026, 3, 2), today, Lang::Es),
+            "Mañana"
+        );
+        assert_eq!(
+            day_title(jiff::civil::date(2026, 2, 1), today, Lang::En),
+            "1 Feb 2026"
+        );
     }
 }
