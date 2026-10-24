@@ -174,14 +174,14 @@
     update();
   }
 
-  // Calendar popover for the diary date, following the WAI-ARIA date picker
-  // dialog pattern. Dates are handled in UTC so local DST changes never
-  // shift a calendar day; "today" comes from the server's configured zone.
-  function setupCalendar(button) {
-    var form = button.form;
-    var input = form && form.querySelector("input[type=date]");
-    if (!input) return;
+  // Calendar popover following the WAI-ARIA date picker dialog pattern.
+  // Dates are handled in UTC so local DST changes never shift a calendar
+  // day. `onChoose` receives the picked ISO date.
+  var calendarCount = 0;
+
+  function setupCalendar(input, button, anchor, todayIso, onChoose) {
     var lang = document.documentElement.lang || "en";
+    var popId = "calendar-" + ++calendarCount;
 
     function parseIso(s) {
       var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || "");
@@ -212,31 +212,31 @@
     var weekdayLongFmt = fmt({ weekday: "long" });
 
     var selected = parseIso(input.value) || new Date();
-    var today = parseIso(button.getAttribute("data-today")) || selected;
+    var today = parseIso(todayIso) || selected;
     var focused = selected;
     var chevron = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="D"/></svg>';
 
     var pop = document.createElement("div");
     pop.className = "calendar";
-    pop.id = "calendar";
+    pop.id = popId;
     pop.hidden = true;
     pop.setAttribute("role", "dialog");
     pop.setAttribute("aria-modal", "false");
-    pop.setAttribute("aria-labelledby", "calendar-title");
+    pop.setAttribute("aria-labelledby", popId + "-title");
     pop.innerHTML =
-      '<div class="calendar-head"><h2 class="calendar-title" id="calendar-title" aria-live="polite"></h2>' +
+      '<div class="calendar-head"><h2 class="calendar-title" id="' + popId + '-title" aria-live="polite"></h2>' +
       '<div class="calendar-arrows">' +
       '<button type="button" data-step="-1">' + chevron.replace("D", "m15 5-7 7 7 7") + '</button>' +
       '<button type="button" data-step="1">' + chevron.replace("D", "m9 5 7 7-7 7") + '</button>' +
-      '</div></div><table role="grid" aria-labelledby="calendar-title"><thead><tr></tr></thead><tbody></tbody></table>' +
+      '</div></div><table role="grid" aria-labelledby="' + popId + '-title"><thead><tr></tr></thead><tbody></tbody></table>' +
       '<div class="calendar-foot"><button type="button" data-today-button></button></div>';
     var title = pop.querySelector(".calendar-title");
     var arrows = pop.querySelectorAll("[data-step]");
-    arrows[0].setAttribute("aria-label", button.getAttribute("data-t-prev-month") || "Previous month");
-    arrows[1].setAttribute("aria-label", button.getAttribute("data-t-next-month") || "Next month");
+    arrows[0].setAttribute("aria-label", t("prev-month", "Previous month"));
+    arrows[1].setAttribute("aria-label", t("next-month", "Next month"));
     var todayButton = pop.querySelector("[data-today-button]");
-    todayButton.textContent = button.getAttribute("data-t-today") || "Today";
+    todayButton.textContent = t("today", "Today");
     var tbody = pop.querySelector("tbody");
 
     // 2023-01-01 was a Sunday.
@@ -249,9 +249,9 @@
       th.textContent = weekdayFmt.format(wd).replace(/\.$/, "");
       headRow.appendChild(th);
     }
-    button.closest(".day-nav").appendChild(pop);
+    anchor.appendChild(pop);
     button.setAttribute("aria-haspopup", "dialog");
-    button.setAttribute("aria-controls", "calendar");
+    button.setAttribute("aria-controls", popId);
     button.setAttribute("aria-expanded", "false");
 
     function render() {
@@ -305,10 +305,10 @@
       if (restoreFocus) button.focus();
     }
     function choose(d) {
-      close(false);
-      if (iso(d) === iso(selected)) return;
-      input.value = iso(d);
-      form.submit();
+      if (iso(d) === iso(selected)) { close(true); return; }
+      selected = d;
+      close(true);
+      onChoose(iso(d));
     }
 
     button.addEventListener("click", function () {
@@ -360,7 +360,101 @@
     });
   }
 
+  function setupDateField(input) {
+    var lang = document.documentElement.lang || "en";
+    var label = input.labels && input.labels[0];
+    var name = label ? label.textContent.trim() : "";
+    var shortFmt, longFmt;
+    try {
+      shortFmt = new Intl.DateTimeFormat(lang, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+      longFmt = new Intl.DateTimeFormat(lang, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+    } catch (e) { return; }
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "date-button";
+    button.id = input.id + "-button";
+    var describedBy = input.getAttribute("aria-describedby");
+    if (describedBy) button.setAttribute("aria-describedby", describedBy);
+    function show() {
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.value);
+      var d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+      button.textContent = d ? shortFmt.format(d) : t("choose-date", "Choose a date");
+      button.setAttribute("aria-label", (name ? name + ": " : "") + (d ? longFmt.format(d) : t("choose-date", "Choose a date")));
+    }
+    show();
+    input.after(button);
+    // Clicking the row's label opens the calendar, as it would focus the field.
+    if (label) label.htmlFor = button.id;
+    var now = new Date();
+    var todayIso = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" +
+      String(now.getDate()).padStart(2, "0");
+    setupCalendar(input, button, input.closest(".form-row") || input.parentNode, todayIso, function (d) {
+      input.value = d;
+      show();
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  // Tab switching: the selected tab always draws its own highlight. Only
+  // while switching does a pill take its place, sliding from the previous
+  // tab to the chosen one; it is removed once the slide ends. The previous
+  // tab is remembered across the page load so the new page can finish it.
+  var PILL_KEY = "korpus-tab-from";
+  var PILL_MS = 380;
+
+  function setupTabPill(bar) {
+    var list = bar.querySelector("ul");
+    var current = bar.querySelector('a[aria-current="page"]');
+    if (!list || !current) return;
+    var links = Array.prototype.slice.call(list.querySelectorAll("a"));
+    var timer = null;
+
+    function place(a) {
+      var r = a.getBoundingClientRect();
+      list.style.setProperty("--pill-x", (r.left - list.getBoundingClientRect().left - list.clientLeft) + "px");
+      list.style.setProperty("--pill-w", r.width + "px");
+    }
+    function finish() {
+      bar.classList.remove("has-pill", "pill-ready", "switching");
+      links.forEach(function (l) { l.classList.remove("is-target"); });
+    }
+    function slide(from, to) {
+      clearTimeout(timer);
+      bar.classList.remove("pill-ready");
+      place(from);
+      bar.classList.add("has-pill");
+      void list.offsetWidth; // commit the start position before the transition
+      bar.classList.add("pill-ready");
+      place(to);
+      timer = setTimeout(function () { if (to === current) finish(); }, PILL_MS + 50);
+    }
+
+    var fromHref = null;
+    try {
+      fromHref = sessionStorage.getItem(PILL_KEY);
+      sessionStorage.removeItem(PILL_KEY);
+    } catch (e) { /* storage unavailable: no slide in */ }
+    var from = links.filter(function (l) { return l.getAttribute("href") === fromHref; })[0];
+    if (from && from !== current) slide(from, current);
+
+    list.addEventListener("click", function (e) {
+      var a = e.target.closest("a");
+      if (!a || a === current || e.defaultPrevented || e.button !== 0 ||
+          e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      links.forEach(function (l) { l.classList.toggle("is-target", l === a); });
+      bar.classList.add("switching");
+      slide(current, a);
+      try { sessionStorage.setItem(PILL_KEY, current.getAttribute("href")); } catch (err) { /* ignore */ }
+    });
+
+    // Back/forward cache restores this page as it was left: mid-switch.
+    window.addEventListener("pageshow", function (e) { if (e.persisted) finish(); });
+  }
+
   onReady(function () {
+    var tabBar = document.querySelector(".tab-bar");
+    if (tabBar) setupTabPill(tabBar);
+
     document.querySelectorAll("form[data-confirm]").forEach(function (f) {
       f.addEventListener("submit", function (e) {
         if (!window.confirm(f.getAttribute("data-confirm"))) e.preventDefault();
@@ -382,7 +476,18 @@
       i.addEventListener("change", function () { if (i.value) i.form.submit(); });
     });
 
-    document.querySelectorAll("[data-date-picker]").forEach(setupCalendar);
+    // The diary's date button jumps straight to the chosen day.
+    document.querySelectorAll("[data-date-picker]").forEach(function (button) {
+      var input = button.form && button.form.querySelector("input[type=date]");
+      if (!input) return;
+      setupCalendar(input, button, button.closest(".day-nav"), button.getAttribute("data-today"), function (d) {
+        input.value = d;
+        button.form.submit();
+      });
+    });
+
+    // Date fields in forms become a capsule showing the date, as in iOS.
+    document.querySelectorAll("input[data-calendar]").forEach(setupDateField);
 
     if (location.pathname === "/setup") {
       var tz = document.querySelector("input[data-detect-timezone]");

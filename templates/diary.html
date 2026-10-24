@@ -9,7 +9,7 @@
       <form method="get" action="/diary" class="date-pick">
         <label for="date" class="visually-hidden">{{ lang.t("Diary date") }}</label>
         <input type="date" id="date" name="date" value="{{ date_iso }}" required data-autosubmit>
-        <button type="button" class="circle-button js-only" data-date-picker data-today="{{ today_iso }}" data-t-today="{{ lang.t("Today") }}" data-t-prev-month="{{ lang.t("Previous month") }}" data-t-next-month="{{ lang.t("Next month") }}" aria-label="{{ lang.t("Choose a date") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
+        <button type="button" class="circle-button js-only" data-date-picker data-today="{{ today_iso }}" aria-label="{{ lang.t("Choose a date") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
         <button type="submit" class="js-hidden pill">{{ lang.t("Go") }}</button>
       </form>
       <a class="circle-button" href="/diary?date={{ prev_iso }}" rel="prev" aria-label="{{ lang.t("Previous day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"/></svg></a>

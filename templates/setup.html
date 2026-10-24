@@ -7,9 +7,7 @@
 </header>
 {% include "_errors.html" %}
 <form method="post" action="/setup">
-  <div class="card">
   {% include "_profile_fields.html" %}
-  </div>
   <button type="submit" class="primary block">{{ lang.t("Continue") }}</button>
 </form>
 {% endblock %}

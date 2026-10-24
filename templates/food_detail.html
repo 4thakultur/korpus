@@ -34,39 +34,40 @@
 <section class="section" aria-labelledby="log-heading">
   <div class="section-head"><h2 id="log-heading">{{ lang.t("Add to diary") }}</h2></div>
   {% include "_errors.html" %}
-  <form method="post" action="/diary/entries" class="card log-form"
+  <form method="post" action="/diary/entries" class="log-form"
         data-nutrients data-kcal="{{ data_kcal }}" data-protein="{{ data_protein }}" data-carbs="{{ data_carbs }}" data-fat="{{ data_fat }}">
     <input type="hidden" name="food_id" value="{{ food.id }}">
-    <div class="field">
-      <label for="amount">{{ lang.f1("Amount ({0})", unit) }}</label>
-      <div class="input-unit amount-input">
-        <input type="text" id="amount" name="amount" value="{{ amount }}" inputmode="decimal" required autocomplete="off"
-          {% if errors.has("amount") %}aria-invalid="true" aria-describedby="amount-error"{% endif %}>
-        <span aria-hidden="true">{{ unit }}</span>
+    <div class="group">
+      <div class="form-row">
+        <label for="amount">{{ lang.t("Amount") }}<span class="visually-hidden"> ({{ unit }})</span></label>
+        <div class="control amount-input">
+          <input type="text" id="amount" name="amount" value="{{ amount }}" inputmode="decimal" required autocomplete="off" {% if errors.has("amount") %}aria-invalid="true" aria-describedby="amount-error"{% endif %}>
+          <span class="unit" aria-hidden="true">{{ unit }}</span>
+        </div>
+        {% if let Some(e) = errors.get("amount") %}<p class="field-error" id="amount-error">{{ e }}</p>{% endif %}
       </div>
-      {% if let Some(e) = errors.get("amount") %}<p class="field-error" id="amount-error">{{ e }}</p>{% endif %}
-      <div class="quick-amounts" role="group" aria-label="{{ lang.t("Quick amounts") }}">
-        {% if !serving_amount.is_empty() %}<button type="button" data-amount="{{ serving_amount }}">{{ lang.f2("1 serving ({0} {1})", serving_amount, unit) }}</button>{% endif %}
-        <button type="button" data-amount="50">50 {{ unit }}</button>
-        <button type="button" data-amount="100">100 {{ unit }}</button>
-        <button type="button" data-amount="200">200 {{ unit }}</button>
+      <div class="form-row">
+        <div class="quick-amounts" role="group" aria-label="{{ lang.t("Quick amounts") }}">
+          {% if !serving_amount.is_empty() %}<button type="button" data-amount="{{ serving_amount }}">{{ lang.f2("1 serving ({0} {1})", serving_amount, unit) }}</button>{% endif %}
+          <button type="button" data-amount="50">50 {{ unit }}</button>
+          <button type="button" data-amount="100">100 {{ unit }}</button>
+          <button type="button" data-amount="200">200 {{ unit }}</button>
+        </div>
       </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
+      <div class="form-row">
         <label for="meal">{{ lang.t("Meal") }}</label>
-        <select id="meal" name="meal" {% if errors.has("meal") %}aria-invalid="true" aria-describedby="meal-error"{% endif %}>
+        <div class="control"><select id="meal" name="meal" {% if errors.has("meal") %}aria-invalid="true" aria-describedby="meal-error"{% endif %}>
           {% for m in meals %}<option value="{{ m.as_str() }}"{% if m.as_str() == meal %} selected{% endif %}>{{ m.label(*lang) }}</option>{% endfor %}
-        </select>
+        </select></div>
         {% if let Some(e) = errors.get("meal") %}<p class="field-error" id="meal-error">{{ e }}</p>{% endif %}
       </div>
-      <div class="field">
+      <div class="form-row">
         <label for="date">{{ lang.t("Date") }}</label>
-        <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+        <div class="control"><input type="date" id="date" name="date" value="{{ date }}" required data-calendar {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}></div>
         {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
       </div>
     </div>
-    <p class="preview field" aria-live="polite" data-preview hidden></p>
+    <p class="preview" aria-live="polite" data-preview hidden></p>
     <button type="submit" class="primary block">{{ lang.t("Add to diary") }}</button>
   </form>
 </section>

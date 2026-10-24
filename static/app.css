@@ -28,6 +28,13 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   --elevated: #ffffff;         /* popovers */
 
+  /* Liquid Glass: translucent material for floating controls. */
+  --glass: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(0, 0, 0, 0.07);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-selected: rgba(118, 118, 128, 0.16);
+  --glass-drop: 0 8px 28px rgba(0, 0, 0, 0.12);
+
   /* Nutrients: a bright colour for graphics and a deeper one for text. */
   --energy: #34c759;   --energy-text: #1f7a36;
   --protein: #ff2d55;  --protein-text: #d70f45;
@@ -42,10 +49,13 @@
   --font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont,
     "Segoe UI Variable Display", system-ui, sans-serif;
 
-  --radius: 12px;
-  --radius-sm: 10px;
+  --glass-shadow: 0 0 0 0.5px var(--glass-edge), inset 0 0.5px 0 var(--glass-highlight), var(--glass-drop);
+
+  --radius: 24px;              /* iOS 26 cards and grouped lists */
+  --radius-md: 18px;
+  --radius-sm: 12px;
   --gutter: 16px;
-  --tabbar-h: 56px;
+  --tabbar-h: 54px;
 }
 
 /* Dark: true black for OLED screens, with grouped cards one step up. The
@@ -75,6 +85,11 @@
     --focus: #0a84ff;
     --shadow: none;
     --elevated: #2c2c2e;
+    --glass: rgba(44, 44, 48, 0.74);
+    --glass-edge: rgba(255, 255, 255, 0.1);
+    --glass-highlight: rgba(255, 255, 255, 0.1);
+    --glass-selected: rgba(255, 255, 255, 0.14);
+    --glass-drop: 0 8px 28px rgba(0, 0, 0, 0.5);
     --energy: #30d158;   --energy-text: #30d158;
     --protein: #ff375f;  --protein-text: #ff375f;
     --carbs: #ff9f0a;    --carbs-text: #ff9f0a;
@@ -106,6 +121,11 @@
   --focus: #0a84ff;
   --shadow: none;
   --elevated: #2c2c2e;
+  --glass: rgba(44, 44, 48, 0.74);
+  --glass-edge: rgba(255, 255, 255, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.1);
+  --glass-selected: rgba(255, 255, 255, 0.14);
+  --glass-drop: 0 8px 28px rgba(0, 0, 0, 0.5);
   --energy: #30d158;   --energy-text: #30d158;
   --protein: #ff375f;  --protein-text: #ff375f;
   --carbs: #ff9f0a;    --carbs-text: #ff9f0a;
@@ -162,7 +182,7 @@ h1 {
 }
 h2 {
   font-family: var(--font-display);
-  font-size: 1.375rem;        /* 22px title 2 */
+  font-size: 1.25rem;         /* 20px title 3 */
   line-height: 1.25;
   font-weight: 700;
   letter-spacing: 0.012em;
@@ -170,7 +190,8 @@ h2 {
 }
 h3 { font-size: 1.0625rem; font-weight: 600; margin: 16px 0 8px; }
 
-:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+a:not([class]):focus-visible { border-radius: 4px; }
 
 .skip-link {
   position: absolute; left: -9999px; top: 0; z-index: 100;
@@ -186,56 +207,68 @@ h3 { font-size: 1.0625rem; font-weight: 600; margin: 16px 0 8px; }
 .num { font-family: var(--font-rounded); font-variant-numeric: tabular-nums; }
 
 /* ---------- Tab bar ---------- */
+/* A floating Liquid Glass capsule, as in iOS 26: at the bottom on phones,
+   at the top on wider screens, as on iPad. The bar itself lets clicks
+   through, so only the capsule covers the page. */
 .tab-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  padding-bottom: env(safe-area-inset-bottom);
-  background: var(--bar-bg);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-top: 0.5px solid var(--separator);
+  padding: 0 max(var(--gutter), env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
+    max(var(--gutter), env(safe-area-inset-left));
+  pointer-events: none;
 }
 .tab-bar ul {
-  display: flex; justify-content: space-around; list-style: none;
-  max-width: 34rem; margin: 0 auto; padding: 0 4px;
+  display: flex; list-style: none; max-width: 30rem; margin: 0 auto; padding: 4px;
+  border-radius: 999px; pointer-events: auto;
+  background: var(--glass); box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
 }
-.tab-bar li { flex: 1; }
+.tab-bar li { flex: 1; min-width: 0; }
 .tab-bar a {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  min-height: var(--tabbar-h); padding: 6px 2px 4px;
-  color: var(--label-2); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  min-height: var(--tabbar-h); padding: 4px 2px; border-radius: 999px;
+  color: var(--label); font-size: 0.625rem; font-weight: 600; letter-spacing: 0;
   text-decoration: none;
 }
-.tab-bar a svg { width: 26px; height: 26px; }
+.tab-bar a span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-bar a svg { width: 24px; height: 24px; }
 .tab-bar a:hover, .entry-main:hover, .back-link:hover { text-decoration: none; }
-.tab-bar a[aria-current="page"] { color: var(--tint); }
+.tab-bar a[aria-current="page"] { color: var(--tint); background: var(--glass-selected); }
 .tab-bar a[aria-current="page"] svg .fill-on-current { fill: currentColor; }
-body.has-tabs { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+/* While switching tabs, one pill stands in for the selected highlight and
+   slides to the chosen tab (app.js sets --pill-x and --pill-w), then goes. */
+.tab-bar ul { position: relative; }
+.tab-bar.has-pill ul::before {
+  content: ""; position: absolute; top: 4px; bottom: 4px; left: 0;
+  width: var(--pill-w); transform: translateX(var(--pill-x));
+  border-radius: 999px; background: var(--glass-selected); pointer-events: none;
+}
+.tab-bar.pill-ready ul::before {
+  transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1), width 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.tab-bar.has-pill li { position: relative; }
+.tab-bar.has-pill a { transition: color 0.2s ease; }
+.tab-bar.has-pill a[aria-current="page"] { background: transparent; }
+.tab-bar.switching a[aria-current="page"] { color: var(--label); }
+.tab-bar.switching a.is-target { color: var(--tint); }
+.tab-bar a.is-target svg .fill-on-current { fill: currentColor; }
+.tab-bar.switching a[aria-current="page"] svg .fill-on-current { fill: none; }
+body.has-tabs { padding-bottom: calc(var(--tabbar-h) + 32px + env(safe-area-inset-bottom)); }
 
-/* Wider screens: a floating capsule at the top, as on iPad. */
 @media (min-width: 48rem) {
   body.has-tabs { padding-bottom: 0; }
-  .tab-bar {
-    position: sticky; top: 0; bottom: auto;
-    display: flex; align-items: center; justify-content: center;
-    padding: 10px var(--gutter);
-    border-top: 0; border-bottom: 0.5px solid var(--separator);
-  }
-  .tab-bar ul {
-    flex: none; gap: 2px; padding: 3px; margin: 0; max-width: none;
-    background: var(--fill); border-radius: 999px;
-  }
+  .tab-bar { position: sticky; top: 0; bottom: auto; padding: 12px var(--gutter); }
+  .tab-bar ul { width: max-content; max-width: none; gap: 2px; }
   .tab-bar li { flex: none; }
   .tab-bar a {
-    flex-direction: row; gap: 6px; min-height: 36px; padding: 0 16px;
-    font-size: 0.9375rem; color: var(--label); border-radius: 999px; white-space: nowrap;
+    flex-direction: row; gap: 6px; min-height: 40px; padding: 0 16px;
+    font-size: 0.9375rem; white-space: nowrap;
   }
   .tab-bar a svg { width: 18px; height: 18px; }
-  .tab-bar a:hover { text-decoration: none; background: var(--fill); }
-  .tab-bar a[aria-current="page"] {
-    background: var(--segment-on); color: var(--segment-on-text); font-weight: 600;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  }
-  main { padding-top: 16px; }
+  .tab-bar a:hover { background: var(--fill); }
+  .tab-bar a[aria-current="page"]:hover { background: var(--glass-selected); }
+  .tab-bar.has-pill a[aria-current="page"]:hover, .tab-bar.has-pill a.is-target:hover { background: transparent; }
+  main { padding-top: 8px; }
 }
 
 .site-footer {
@@ -262,6 +295,7 @@ body.has-tabs { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-botto
   background: var(--card); border-radius: var(--radius); padding: 16px;
   margin: 0 0 24px; box-shadow: var(--shadow);
 }
+.card > :last-child { margin-bottom: 0; }
 .section { margin: 0 0 28px; }
 .section-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
@@ -301,7 +335,7 @@ a.row:active, button.row:active { background: var(--fill-strong); }
 /* ---------- Status messages ---------- */
 .flash, .note, .warning, .error-summary {
   display: flex; gap: 10px; align-items: flex-start;
-  border-radius: var(--radius); padding: 12px 16px; margin: 0 0 16px; font-size: 0.9375rem;
+  border-radius: var(--radius-md); padding: 12px 16px; margin: 0 0 16px; font-size: 0.9375rem;
 }
 .flash { background: var(--card); box-shadow: var(--shadow); }
 .flash::before {
@@ -329,7 +363,7 @@ button, .button {
   min-height: 44px; padding: 0 18px;
   font: inherit; font-weight: 600; letter-spacing: -0.01em;
   color: var(--tint); background: var(--tint-fill);
-  border: 0; border-radius: var(--radius); cursor: pointer;
+  border: 0; border-radius: 999px; cursor: pointer;
   text-decoration: none; text-align: center;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
@@ -338,7 +372,7 @@ button:active, .button:active { opacity: 0.6; }
 .primary { background: var(--tint); color: var(--on-tint); }
 .danger { background: var(--danger-fill); color: var(--danger); }
 .plain { background: transparent; padding: 0 8px; font-weight: 400; }
-.block { display: flex; width: 100%; min-height: 50px; font-size: 1.0625rem; }
+.block { display: flex; width: 100%; min-height: 52px; font-size: 1.0625rem; }
 .icon-button {
   min-width: 44px; min-height: 44px; padding: 0; background: transparent;
   color: var(--label-2); border-radius: 50%;
@@ -347,7 +381,10 @@ button:active, .button:active { opacity: 0.6; }
 .icon-button:hover { background: var(--fill); opacity: 1; }
 .circle-button {
   display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0;
-  border-radius: 50%; background: var(--card); color: var(--tint); box-shadow: var(--shadow);
+  border-radius: 50%; color: var(--label);
+  background: var(--glass); box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
 }
 .circle-button svg { width: 18px; height: 18px; }
 .pill {
@@ -356,66 +393,111 @@ button:active, .button:active { opacity: 0.6; }
 }
 ul.actions { display: flex; flex-wrap: wrap; gap: 10px; list-style: none; padding: 0; margin: 16px 0; }
 ul.actions.stacked { flex-direction: column; }
-ul.actions.stacked .button, ul.actions.stacked button { width: 100%; min-height: 50px; }
+ul.actions.stacked .button, ul.actions.stacked button { width: 100%; min-height: 52px; }
 form.inline { display: inline; margin: 0; }
 
 /* ---------- Forms ---------- */
-.stack > * + * { margin-top: 16px; }
-fieldset { border: 0; margin: 0 0 24px; padding: 0; min-width: 0; }
-legend, .group-title {
-  padding: 0; margin: 0 4px 8px;
-  font-family: var(--font-display); font-size: 1.375rem; font-weight: 700; letter-spacing: 0.012em;
+/* Inset grouped forms, as in iOS Settings and Health: a rounded group of
+   rows, each with its label on the left and its value on the right, and
+   explanations as a footnote below the group. */
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+legend, .group-head {
+  display: block; padding: 0; margin: 0 16px 8px;
+  font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; color: var(--label-2);
 }
-fieldset.inner { margin: 0 0 16px; }
-fieldset.inner > legend {
-  font-family: var(--font); font-size: 0.9375rem; font-weight: 500; letter-spacing: -0.01em;
-  color: var(--label); margin: 0 0 6px;
+.group {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  margin: 0 0 24px;
 }
-.field { margin: 0 0 16px; }
-.card > .field:last-child, .card > :last-child { margin-bottom: 0; }
-.field > label, .field-label {
-  display: block; margin: 0 0 6px; font-size: 0.9375rem; font-weight: 500;
+.group:has(+ .group-foot), .group:has(+ .preview:not([hidden])) { margin-bottom: 8px; }
+.group-lead { margin: 0 16px 10px; font-size: 0.9375rem; color: var(--label-2); }
+.group-foot { margin: 0 16px 24px; font-size: 0.8125rem; line-height: 1.4; color: var(--label-2); }
+.group-foot p { margin: 0 0 6px; }
+.group-foot > :last-child { margin-bottom: 0; }
+
+.form-row {
+  position: relative; display: grid; grid-template-columns: minmax(min-content, max-content) minmax(auto, 1fr);
+  align-items: center; gap: 2px 12px; min-height: 52px; padding: 7px 16px;
 }
+.form-row > :only-child, .form-row > .field-error { grid-column: 1 / -1; }
+.group > * + .form-row::before {
+  content: ""; position: absolute; top: 0; left: 16px; right: 0;
+  border-top: 0.5px solid var(--separator);
+}
+.form-row > label { min-width: 0; padding: 6px 0; }
+.form-row > label.macro-label { display: block; }
+.form-row > label.macro-label .dot { margin-right: 6px; vertical-align: 0.1em; }
+.form-row > .control { min-width: 7rem; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.control .unit { flex: none; color: var(--label-2); }
+.form-row .field-error { margin: 0 0 4px; }
+.form-row .quick-amounts { margin: 2px 0; }
+.form-row:has([aria-invalid="true"]) > label { color: var(--danger); }
+/* A row with its control below the label: segmented controls, notes, files. */
+.form-row.stacked { display: block; padding-top: 12px; padding-bottom: 12px; }
+.form-row.stacked > label { display: block; padding: 0; margin: 0 0 8px; }
+.form-row > legend {
+  float: left; width: 100%; margin: 0 0 10px;
+  font-size: inherit; font-weight: 400; letter-spacing: inherit; color: var(--label);
+}
+.form-row > legend + * { clear: both; }
+.form-row.stacked .field-error { margin-top: 6px; }
 .req, .opt { font-weight: 400; color: var(--label-2); font-size: 0.8125rem; }
+
 input[type="text"], input[type="search"], input[type="date"], input[type="file"],
 input[type="number"], select, textarea {
-  width: 100%; min-height: 44px; padding: 10px 12px;
+  width: 100%; min-height: 44px; padding: 10px 14px;
   font: inherit; color: var(--label);
-  background: var(--fill); border: 1px solid var(--field-border); border-radius: var(--radius-sm);
+  background: var(--fill); border: 0; border-radius: var(--radius-sm);
   appearance: none; -webkit-appearance: none;
 }
+/* Inside a row, values sit on the right with no box around them. */
+.form-row :is(input[type="text"], input[type="number"], select, textarea) {
+  min-height: 38px; padding: 6px 0; background: transparent; border-radius: 6px; text-align: right;
+}
+.form-row input[type="date"] {
+  width: auto; min-width: 10.5rem; min-height: 36px; padding: 6px 14px; border-radius: 999px; background: var(--fill);
+}
+.form-row.stacked :is(input, textarea) { text-align: left; }
+.form-row textarea { min-height: 4.5rem; resize: vertical; line-height: 1.4; }
 input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 3px solid var(--focus); outline-offset: 0; border-color: var(--focus);
+  outline: 3px solid var(--focus); outline-offset: 2px;
 }
 input[type="date"] { font-variant-numeric: tabular-nums; }
 input[type="file"] { padding: 9px 12px; }
 input[type="file"]::file-selector-button {
   font: inherit; font-weight: 600; color: var(--tint); background: var(--tint-fill);
-  border: 0; border-radius: 8px; padding: 4px 10px; margin-right: 10px; cursor: pointer;
+  border: 0; border-radius: 999px; padding: 4px 12px; margin-right: 10px; cursor: pointer;
 }
+/* Pop-up menus show their value with up and down chevrons, as in iOS. */
 select {
-  padding-right: 36px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--label-2) 50%),
-    linear-gradient(135deg, var(--label-2) 50%, transparent 50%);
-  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
-  background-size: 5px 5px; background-repeat: no-repeat;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 16' fill='none' stroke='%238e8e93' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m1.5 5.5 3.5-3.5 3.5 3.5M1.5 10.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
+  background-position: right 14px center; background-size: 9px 15px; background-repeat: no-repeat;
+}
+.form-row select {
+  width: auto; max-width: 100%; padding-right: 18px; color: var(--label-2);
+  text-align-last: right; background-position: right 0 center;
 }
 textarea { min-height: 5.5rem; resize: vertical; line-height: 1.4; }
 ::placeholder { color: var(--label-2); opacity: 0.8; }
 input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="true"] {
-  border: 2px solid var(--danger);
+  box-shadow: inset 0 0 0 2px var(--danger);
 }
+.form-row :is(input, select, textarea)[aria-invalid="true"] { box-shadow: none; color: var(--danger); }
 .field-error { color: var(--danger); font-size: 0.875rem; font-weight: 600; margin: 6px 4px 0; }
 .field-error::before { content: "⚠ "; }
-.input-unit { display: flex; align-items: center; gap: 8px; }
-.input-unit select { width: auto; }
-.input-unit > span { color: var(--label-2); min-width: 1.5em; }
-.amount-input input { font-family: var(--font-rounded); font-size: 1.5rem; font-weight: 600; min-height: 52px; }
-.field-row, .grid-2, .grid-3 { display: grid; gap: 0 12px; }
-@media (min-width: 34rem) {
-  .field-row, .grid-2 { grid-template-columns: 1fr 1fr; }
-  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+.field { margin: 0 0 16px; }
+.field > label { display: block; margin: 0 0 6px; font-size: 0.9375rem; font-weight: 500; }
+.amount-input input { font-family: var(--font-rounded); font-size: 1.375rem; font-weight: 600; }
+.amount-input .unit { font-size: 1.0625rem; }
+
+/* The date shown as a grey capsule that opens the calendar (app.js). */
+.js input[data-calendar] { display: none; }
+.date-button {
+  min-height: 36px; padding: 0 14px; border-radius: 999px;
+  background: var(--fill); color: var(--label); font-weight: 400; font-variant-numeric: tabular-nums;
 }
+.date-button[aria-expanded="true"] { color: var(--tint); }
 
 /* Native radios and checkboxes (used where a custom control does not fit). */
 input[type="radio"], input[type="checkbox"] {
@@ -424,7 +506,7 @@ input[type="radio"], input[type="checkbox"] {
 
 /* Segmented control: radios inside labels, the selected one raised. */
 .segmented {
-  display: flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--fill-strong);
+  display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--fill);
 }
 .segmented label {
   position: relative; flex: 1 1 0; min-width: 0; display: flex;
@@ -432,7 +514,7 @@ input[type="radio"], input[type="checkbox"] {
 .segmented input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
 .segmented span {
   flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
-  min-height: 40px; padding: 4px 8px; border-radius: 7px;
+  min-height: 36px; padding: 4px 10px; border-radius: 999px;
   font-size: 0.875rem; font-weight: 500; line-height: 1.2; color: var(--label);
 }
 .segmented input:checked + span {
@@ -443,10 +525,11 @@ input[type="radio"], input[type="checkbox"] {
 
 /* Choice list: one row per option with a checkmark, like iOS settings. */
 .choices { list-style: none; margin: 0; padding: 0; background: var(--fill); border-radius: var(--radius-sm); overflow: hidden; }
-.choices.on-bg { background: var(--card); border-radius: var(--radius); }
+.choices.on-bg { background: var(--card); border-radius: var(--radius); margin-bottom: 24px; box-shadow: var(--shadow); }
+.choices.on-bg:has(+ .field-error) { margin-bottom: 8px; }
 .choices label {
   position: relative; display: flex; align-items: center; gap: 12px;
-  min-height: 48px; padding: 10px 16px; cursor: pointer;
+  min-height: 52px; padding: 10px 16px; cursor: pointer;
 }
 .choices label + label::before {
   content: ""; position: absolute; top: 0; left: 16px; right: 0; border-top: 0.5px solid var(--separator);
@@ -454,25 +537,24 @@ input[type="radio"], input[type="checkbox"] {
 .choices input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .choices .check { margin-left: auto; width: 18px; height: 18px; color: var(--tint); visibility: hidden; }
 .choices input:checked ~ .check { visibility: visible; }
-.choices input:checked ~ .choice-text { font-weight: 600; }
 .choices input:focus-visible ~ .choice-text { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
 
-/* Switch: a checkbox drawn as an iOS toggle. */
-.switch-row, .field > label.switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; margin: 0; }
+/* Switch: a checkbox drawn as an iOS 26 toggle with a capsule knob. */
+.switch-row { display: flex; align-items: center; gap: 12px; cursor: pointer; margin: 0; flex: 1; padding: 6px 0; }
 .switch-row .switch-text { flex: 1; }
 input.switch {
   appearance: none; -webkit-appearance: none; position: relative; flex: none;
-  width: 51px; height: 31px; border-radius: 999px; margin: 0;
+  width: 64px; height: 28px; border-radius: 999px; margin: 0;
   background: var(--fill-strong); box-shadow: inset 0 0 0 1px var(--field-border);
   cursor: pointer; transition: background-color 0.2s ease;
 }
 input.switch::after {
-  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
-  background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.16);
+  content: ""; position: absolute; top: 2px; left: 2px; width: 38px; height: 24px; border-radius: 999px;
+  background: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.12);
   transition: transform 0.2s ease;
 }
 input.switch:checked { background: var(--energy); box-shadow: none; }
-input.switch:checked::after { transform: translateX(20px); }
+input.switch:checked::after { transform: translateX(22px); }
 
 /* ---------- Diary ---------- */
 .day-head { margin-bottom: 20px; }
@@ -483,7 +565,7 @@ input.switch:checked::after { transform: translateX(20px); }
 .date-pick { position: relative; display: flex; gap: 8px; }
 .date-pick input[type="date"] {
   min-height: 44px; border-radius: 999px; background: var(--card);
-  border-color: transparent; color: var(--tint); font-weight: 600; box-shadow: var(--shadow);
+  color: var(--tint); font-weight: 600; box-shadow: var(--shadow);
 }
 /* With JS the date input is replaced by the calendar popover (app.js); it
    stays in the form to carry the chosen date. */
@@ -492,12 +574,14 @@ input.switch:checked::after { transform: translateX(20px); }
 
 .calendar {
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 20;
-  width: 320px; max-width: calc(100vw - 2 * var(--gutter)); padding: 14px 12px 12px;
-  background: var(--elevated); border-radius: 14px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.18), 0 0 0 0.5px var(--separator);
+  width: 320px; max-width: calc(100vw - 2 * var(--gutter)); padding: 16px 12px 12px;
+  background: var(--glass); border-radius: 28px; box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  backdrop-filter: blur(30px) saturate(180%);
   transform-origin: top right; animation: calendar-in 0.16s ease-out;
 }
 .calendar[hidden] { display: none; }
+.form-row .calendar { right: 8px; }
 @keyframes calendar-in { from { opacity: 0; transform: scale(0.96); } }
 .calendar-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 0 8px; }
 .calendar-title { margin: 0; font-size: 1.0625rem; font-weight: 600; color: var(--label); text-transform: capitalize; }
@@ -524,7 +608,7 @@ input.switch:checked::after { transform: translateX(20px); }
 .calendar td button[aria-current="date"] { color: var(--tint); font-weight: 600; }
 .calendar td button[aria-pressed="true"] { background: var(--tint); color: var(--on-tint); font-weight: 600; }
 .calendar-foot { display: flex; justify-content: flex-end; padding: 6px 4px 0; border-top: 0.5px solid var(--separator); margin-top: 6px; }
-.calendar-foot button { min-height: 36px; padding: 0 10px; background: transparent; color: var(--tint); font-weight: 600; border-radius: 8px; }
+.calendar-foot button { min-height: 36px; padding: 0 12px; background: transparent; color: var(--tint); font-weight: 600; }
 .calendar-foot button:hover { background: var(--fill); }
 .today-link { margin: -8px 0 16px; }
 
@@ -616,8 +700,7 @@ progress::-moz-progress-bar { background: var(--c, var(--tint)); border-radius: 
   position: absolute; left: 10px; top: 50%; width: 18px; height: 18px; margin-top: -9px;
   color: var(--label-2); pointer-events: none;
 }
-.search-field input[type="search"] { padding-left: 36px; border-color: transparent; background: var(--fill-strong); }
-.search-field input[type="search"]:focus-visible { border-color: var(--focus); }
+.search-field input[type="search"] { padding-left: 38px; border-radius: 999px; background: var(--fill-strong); }
 .context-line { margin: -8px 4px 16px; font-size: 0.9375rem; color: var(--label-2); }
 
 .results { list-style: none; margin: 0 0 12px; padding: 0; background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
@@ -668,8 +751,7 @@ progress::-moz-progress-bar { background: var(--c, var(--tint)); border-radius: 
 .quick-amounts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .quick-amounts button { min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 0.9375rem; font-weight: 500; color: var(--label); background: var(--fill-strong); }
 .preview {
-  margin: 0 0 16px; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--fill);
-  font-size: 0.9375rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  margin: 0 16px 24px; font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums;
 }
 
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -695,9 +777,7 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .eyebrow-heading { font-family: var(--font); font-size: 0.9375rem; font-weight: 600; color: var(--energy-text); margin: 0 0 4px; letter-spacing: -0.01em; }
 .note > :last-child { margin-bottom: 0; }
 .target-hero .big-number strong { color: var(--energy-text); }
-.estimate { margin-top: 16px; padding: 16px; border-radius: var(--radius-sm); background: var(--fill); }
 .estimate h3 { margin-top: 0; }
-.estimate .facts div { border-color: var(--separator); }
 .facts dd strong { color: var(--label); }
 .macro-label, .field > label.macro-label { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 

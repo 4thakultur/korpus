@@ -606,6 +606,7 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Este objetivo está por debajo de 1200 kcal. Una ingesta muy baja no es adecuada para la mayoría de los adultos sin supervisión médica.",
     ),
     ("Weight", "Poids", "Peso"),
+    ("Height", "Taille", "Altura"),
     (
         "Enter your weight.",
         "Saisissez votre poids.",
@@ -741,7 +742,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
     ),
     ("Change", "Variation", "Cambio"),
     ("Edit", "Modifier", "Editar"),
-    ("Weight ({0})", "Poids ({0})", "Peso ({0})"),
     (
         "Weight trend in {0}",
         "Évolution du poids en {0}",
@@ -853,7 +853,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "valeurs enregistrées pour 100 {0} :",
         "valores registrados por 100 {0}:",
     ),
-    ("Amount ({0})", "Quantité ({0})", "Cantidad ({0})"),
     ("General", "Général", "General"),
     (
         "Save settings",
@@ -1135,7 +1134,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Enregistrer les objectifs",
         "Guardar objetivos",
     ),
-    ("Height ({0})", "Taille ({0})", "Altura ({0})"),
     (
         "Suggested target ({0})",
         "Objectif suggéré ({0})",

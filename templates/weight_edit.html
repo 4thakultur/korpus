@@ -3,26 +3,26 @@
 <a class="back-link" href="/weight">{% include "_back.html" %}{{ lang.t("Back to weight") }}</a>
 <header class="page-head"><h1>{{ lang.t("Edit weight") }}</h1></header>
 {% include "_errors.html" %}
-<form method="post" action="/weight/{{ id }}" class="card">
-  <div class="field-row">
-    <div class="field">
-      <label for="weight">{{ lang.f1("Weight ({0})", unit) }}</label>
-      <div class="input-unit amount-input">
+<form method="post" action="/weight/{{ id }}">
+  <div class="group">
+    <div class="form-row">
+      <label for="weight">{{ lang.t("Weight") }}<span class="visually-hidden"> ({{ unit }})</span></label>
+      <div class="control amount-input">
         <input type="text" id="weight" name="weight" value="{{ weight }}" inputmode="decimal" required autocomplete="off" {% if errors.has("weight") %}aria-invalid="true" aria-describedby="weight-error"{% endif %}>
-        <span aria-hidden="true">{{ unit }}</span>
+        <span class="unit" aria-hidden="true">{{ unit }}</span>
       </div>
       {% if let Some(e) = errors.get("weight") %}<p class="field-error" id="weight-error">{{ e }}</p>{% endif %}
     </div>
-    <div class="field">
+    <div class="form-row">
       <label for="date">{{ lang.t("Date") }}</label>
-      <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+      <div class="control"><input type="date" id="date" name="date" value="{{ date }}" required data-calendar {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}></div>
       {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
     </div>
-  </div>
-  <div class="field">
-    <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
-    <input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off" {% if errors.has("note") %}aria-invalid="true" aria-describedby="note-error"{% endif %}>
-    {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+    <div class="form-row">
+      <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <div class="control"><input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off" {% if errors.has("note") %}aria-invalid="true" aria-describedby="note-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+    </div>
   </div>
   <ul class="actions stacked">
     <li><button type="submit" class="primary">{{ lang.t("Save") }}</button></li>

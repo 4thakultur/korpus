@@ -23,63 +23,68 @@
 <form method="post" action="/goals">
   <section class="section" aria-labelledby="estimate-heading">
     <div class="section-head"><h2 id="estimate-heading">{{ lang.t("About you") }} <span class="opt">{{ lang.t("(optional)") }}</span></h2></div>
-    <div class="card">
-    <p class="hint field">{{ lang.t("Only needed to estimate a target. These details stay on this server and are used for the Mifflin–St Jeor estimate of resting energy needs, multiplied by your activity level.") }}</p>
-    <fieldset id="sex" class="inner">
-      <legend>{{ lang.t("Sex used by the equation") }}</legend>
-      <div class="segmented">
-        <label><input type="radio" name="sex" value="female"{% if form.sex == "female" %} checked{% endif %}><span>{{ lang.t("Female") }}</span></label>
-        <label><input type="radio" name="sex" value="male"{% if form.sex == "male" %} checked{% endif %}><span>{{ lang.t("Male") }}</span></label>
-        <label><input type="radio" name="sex" value=""{% if form.sex.is_empty() %} checked{% endif %}><span>{{ lang.t("Prefer not to say") }}</span></label>
-      </div>
-      <p class="hint">{{ lang.t("The equation has separate formulas; without this, Korpus cannot estimate.") }}</p>
-      {% if let Some(e) = errors.get("sex") %}<p class="field-error">{{ e }}</p>{% endif %}
-    </fieldset>
-    <div class="grid-3">
-      <div class="field">
+    <p class="group-lead">{{ lang.t("Only needed to estimate a target. These details stay on this server and are used for the Mifflin–St Jeor estimate of resting energy needs, multiplied by your activity level.") }}</p>
+    <div class="group">
+      <fieldset id="sex" class="form-row stacked">
+        <legend>{{ lang.t("Sex used by the equation") }}</legend>
+        <div class="segmented">
+          <label><input type="radio" name="sex" value="female"{% if form.sex == "female" %} checked{% endif %}><span>{{ lang.t("Female") }}</span></label>
+          <label><input type="radio" name="sex" value="male"{% if form.sex == "male" %} checked{% endif %}><span>{{ lang.t("Male") }}</span></label>
+          <label><input type="radio" name="sex" value=""{% if form.sex.is_empty() %} checked{% endif %}><span>{{ lang.t("Prefer not to say") }}</span></label>
+        </div>
+        {% if let Some(e) = errors.get("sex") %}<p class="field-error">{{ e }}</p>{% endif %}
+      </fieldset>
+      <div class="form-row">
         <label for="birth_date">{{ lang.t("Date of birth") }}</label>
-        <input type="date" id="birth_date" name="birth_date" value="{{ form.birth_date }}" aria-describedby="birth-hint{% if errors.has("birth_date") %} birth_date-error{% endif %}" {% if errors.has("birth_date") %}aria-invalid="true"{% endif %}>
-        <p class="hint" id="birth-hint">{{ lang.t("Energy needs change with age.") }}</p>
+        <div class="control"><input type="date" id="birth_date" name="birth_date" value="{{ form.birth_date }}" aria-describedby="birth-hint{% if errors.has("birth_date") %} birth_date-error{% endif %}" {% if errors.has("birth_date") %}aria-invalid="true"{% endif %}></div>
         {% if let Some(e) = errors.get("birth_date") %}<p class="field-error" id="birth_date-error">{{ e }}</p>{% endif %}
       </div>
-      <div class="field">
-        <label for="height">{{ lang.f1("Height ({0})", height_unit) }}</label>
-        <input type="text" id="height" name="height" value="{{ form.height }}" inputmode="decimal" autocomplete="off" {% if errors.has("height") %}aria-invalid="true" aria-describedby="height-error"{% endif %}>
+      <div class="form-row">
+        <label for="height">{{ lang.t("Height") }}<span class="visually-hidden"> ({{ height_unit }})</span></label>
+        <div class="control">
+          <input type="text" id="height" name="height" value="{{ form.height }}" inputmode="decimal" autocomplete="off" {% if errors.has("height") %}aria-invalid="true" aria-describedby="height-error"{% endif %}>
+          <span class="unit" aria-hidden="true">{{ height_unit }}</span>
+        </div>
         {% if let Some(e) = errors.get("height") %}<p class="field-error" id="height-error">{{ e }}</p>{% endif %}
       </div>
-      <div class="field">
-        <label for="weight">{{ lang.f1("Weight ({0})", weight_unit) }}</label>
-        <input type="text" id="weight" name="weight" value="{{ form.weight }}" inputmode="decimal" autocomplete="off" aria-describedby="weight-hint{% if errors.has("weight") %} weight-error{% endif %}" {% if errors.has("weight") %}aria-invalid="true"{% endif %}>
-        <p class="hint" id="weight-hint">{{ lang.t("Prefilled from your latest weigh-in. The target only changes when you save this form.") }}</p>
+      <div class="form-row">
+        <label for="weight">{{ lang.t("Weight") }}<span class="visually-hidden"> ({{ weight_unit }})</span></label>
+        <div class="control">
+          <input type="text" id="weight" name="weight" value="{{ form.weight }}" inputmode="decimal" autocomplete="off" aria-describedby="weight-hint{% if errors.has("weight") %} weight-error{% endif %}" {% if errors.has("weight") %}aria-invalid="true"{% endif %}>
+          <span class="unit" aria-hidden="true">{{ weight_unit }}</span>
+        </div>
         {% if let Some(e) = errors.get("weight") %}<p class="field-error" id="weight-error">{{ e }}</p>{% endif %}
       </div>
-    </div>
-    <div class="field-row">
-      <div class="field">
+      <div class="form-row">
         <label for="activity">{{ lang.t("Activity level") }}</label>
-        <select id="activity" name="activity" {% if errors.has("activity") %}aria-invalid="true" aria-describedby="activity-error"{% endif %}>
+        <div class="control"><select id="activity" name="activity" {% if errors.has("activity") %}aria-invalid="true" aria-describedby="activity-error"{% endif %}>
           <option value="">{{ lang.t("Not set") }}</option>
           {% for a in activities %}<option value="{{ a.value }}"{% if form.activity == a.value %} selected{% endif %}>{{ a.label }}</option>{% endfor %}
-        </select>
+        </select></div>
         {% if let Some(e) = errors.get("activity") %}<p class="field-error" id="activity-error">{{ e }}</p>{% endif %}
       </div>
-      <div class="field">
+      <div class="form-row">
         <label for="goal">{{ lang.t("Goal") }}</label>
-        <select id="goal" name="goal">
+        <div class="control"><select id="goal" name="goal">
           {% for g in goals %}<option value="{{ g.value }}"{% if form.goal == g.value %} selected{% endif %}>{{ g.label }}</option>{% endfor %}
-        </select>
+        </select></div>
+      </div>
+      <div class="form-row">
+        <label class="switch-row"><span class="switch-text">{{ lang.t("I am pregnant or breastfeeding, or have a medical condition that affects my nutrition") }}</span><input type="checkbox" class="switch" name="special" value="on" aria-describedby="special-hint"{% if !form.special.is_empty() %} checked{% endif %}></label>
       </div>
     </div>
-    <div class="field">
-      <label class="switch-row"><span class="switch-text">{{ lang.t("I am pregnant or breastfeeding, or have a medical condition that affects my nutrition") }}</span><input type="checkbox" class="switch" name="special" value="on" aria-describedby="special-hint"{% if !form.special.is_empty() %} checked{% endif %}></label>
-      <p class="hint" id="special-hint">{{ lang.t("If checked, Korpus will not suggest a weight-loss target.") }}</p>
+    <div class="group-foot">
+      <p>{{ lang.t("The equation has separate formulas; without this, Korpus cannot estimate.") }}</p>
+      <p id="birth-hint">{{ lang.t("Energy needs change with age.") }}</p>
+      <p id="weight-hint">{{ lang.t("Prefilled from your latest weigh-in. The target only changes when you save this form.") }}</p>
+      <p id="special-hint">{{ lang.t("If checked, Korpus will not suggest a weight-loss target.") }}</p>
     </div>
 
     {% if minor %}
       <p class="warning" role="note">{{ lang.t("Korpus does not estimate calorie targets for people under 18. A doctor or registered dietitian can give advice that fits you.") }}</p>
     {% endif %}
     {% if let Some(e) = estimate %}
-    <div class="estimate" aria-labelledby="estimate-result">
+    <div class="card estimate" aria-labelledby="estimate-result">
       <h3 id="estimate-result">{{ lang.t("Estimate from these details") }}</h3>
       <dl class="facts">
         <div><dt>{{ lang.t("Resting energy (Mifflin–St Jeor)") }}</dt><dd>{{ e.bmr }} {{ lang.t("kcal/day") }}</dd></div>
@@ -89,42 +94,39 @@
       {% for n in e.notes %}<p class="note">{{ n }}</p>{% endfor %}
     </div>
     {% endif %}
-    </div>
     <p class="disclaimer section-note">{{ lang.t("Estimates are approximate and are not medical advice. Individual needs vary; for personal guidance, speak to a qualified health professional.") }}</p>
   </section>
 
   <section class="section" aria-labelledby="target-heading">
     <div class="section-head"><h2 id="target-heading">{{ lang.t("Daily target") }}</h2></div>
-    <div class="card">
-    <fieldset id="target_mode" class="inner">
+    <fieldset id="target_mode">
       <legend>{{ lang.t("How should your target be set?") }}</legend>
-      <div class="choices">
+      <div class="choices on-bg">
         <label><input type="radio" name="target_mode" value="estimate"{% if form.target_mode == "estimate" %} checked{% endif %}><span class="choice-text">{{ lang.t("Use the estimate from the details above") }}</span>{% include "_check.html" %}</label>
         <label><input type="radio" name="target_mode" value="custom"{% if form.target_mode == "custom" %} checked{% endif %}><span class="choice-text">{{ lang.t("Set my own target") }}</span>{% include "_check.html" %}</label>
         <label><input type="radio" name="target_mode" value="none"{% if form.target_mode == "none" || form.target_mode.is_empty() %} checked{% endif %}><span class="choice-text">{{ lang.t("No target") }}</span>{% include "_check.html" %}</label>
       </div>
-      {% if let Some(e) = errors.get("target_mode") %}<p class="field-error">{{ e }}</p>{% endif %}
+      {% if let Some(e) = errors.get("target_mode") %}<p class="field-error group-foot">{{ e }}</p>{% endif %}
     </fieldset>
-    <div class="field c-energy">
-      <label for="custom_target" class="macro-label"><span class="dot" aria-hidden="true"></span>{{ lang.t("Own target (kcal per day)") }}</label>
-      <input type="text" id="custom_target" name="custom_target" value="{{ form.custom_target }}" inputmode="numeric" autocomplete="off" {% if errors.has("custom_target") %}aria-invalid="true" aria-describedby="custom_target-error"{% endif %}>
-      {% if let Some(e) = errors.get("custom_target") %}<p class="field-error" id="custom_target-error">{{ e }}</p>{% endif %}
-    </div>
+    <div class="group">
+      <div class="form-row c-energy">
+        <label for="custom_target" class="macro-label"><span class="dot" aria-hidden="true"></span>{{ lang.t("Own target (kcal per day)") }}</label>
+        <div class="control"><input type="text" id="custom_target" name="custom_target" value="{{ form.custom_target }}" inputmode="numeric" autocomplete="off" {% if errors.has("custom_target") %}aria-invalid="true" aria-describedby="custom_target-error"{% endif %}></div>
+        {% if let Some(e) = errors.get("custom_target") %}<p class="field-error" id="custom_target-error">{{ e }}</p>{% endif %}
+      </div>
     </div>
   </section>
 
   <section class="section" aria-labelledby="macro-heading">
     <div class="section-head"><h2 id="macro-heading">{{ lang.t("Macronutrient goals") }} <span class="opt">{{ lang.t("(optional)") }}</span></h2></div>
-    <div class="card">
-    <div class="grid-3">
+    <div class="group">
     {% for mf in self.macro_fields() %}{% let id = mf.id %}{% let label = mf.label %}{% let value = mf.value.as_str() %}
-      <div class="field c-{{ id.trim_end_matches("_goal") }}">
+      <div class="form-row c-{{ id.trim_end_matches("_goal") }}">
         <label for="{{ id }}" class="macro-label"><span class="dot" aria-hidden="true"></span>{{ lang.f1("{0} (g per day)", label) }}</label>
-        <input type="text" id="{{ id }}" name="{{ id }}" value="{{ value }}" inputmode="decimal" autocomplete="off" {% if errors.has(id) %}aria-invalid="true" aria-describedby="{{ id }}-error"{% endif %}>
+        <div class="control"><input type="text" id="{{ id }}" name="{{ id }}" value="{{ value }}" inputmode="decimal" autocomplete="off" {% if errors.has(id) %}aria-invalid="true" aria-describedby="{{ id }}-error"{% endif %}></div>
         {% if let Some(e) = errors.get(id) %}<p class="field-error" id="{{ id }}-error">{{ e }}</p>{% endif %}
       </div>
     {% endfor %}
-    </div>
     </div>
   </section>
   <button type="submit" class="primary block">{{ lang.t("Save goals") }}</button>

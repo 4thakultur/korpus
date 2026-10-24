@@ -7,23 +7,23 @@
   <div class="section-head"><h2 id="general-heading">{{ lang.t("General") }}</h2></div>
   {% include "_errors.html" %}
   <form method="post" action="/settings">
-    <div class="card">
     {% include "_profile_fields.html" %}
-    </div>
     <button type="submit" class="primary block">{{ lang.t("Save settings") }}</button>
   </form>
 </section>
 
 <section class="section" aria-labelledby="appearance-heading">
   <div class="section-head"><h2 id="appearance-heading">{{ lang.t("Appearance") }}</h2></div>
-  <form method="post" action="/settings/appearance" class="card">
-    <fieldset class="inner">
-      <legend class="visually-hidden">{{ lang.t("Appearance") }}</legend>
-      <div class="segmented" data-theme-picker>
-        {% for t in themes %}<label><input type="radio" name="theme" value="{{ t.as_str() }}"{% if *t == theme %} checked{% endif %}><span>{{ t.label(*lang) }}</span></label>{% endfor %}
-      </div>
-      <p class="hint">{{ lang.t("Automatic follows your device. Dark uses true black, which saves power on OLED screens. Saved on this device only.") }}</p>
-    </fieldset>
+  <form method="post" action="/settings/appearance">
+    <div class="group">
+      <fieldset class="form-row stacked" aria-describedby="appearance-hint">
+        <legend class="visually-hidden">{{ lang.t("Appearance") }}</legend>
+        <div class="segmented" data-theme-picker>
+          {% for t in themes %}<label><input type="radio" name="theme" value="{{ t.as_str() }}"{% if *t == theme %} checked{% endif %}><span>{{ t.label(*lang) }}</span></label>{% endfor %}
+        </div>
+      </fieldset>
+    </div>
+    <p class="group-foot" id="appearance-hint">{{ lang.t("Automatic follows your device. Dark uses true black, which saves power on OLED screens. Saved on this device only.") }}</p>
     <button type="submit" class="block">{{ lang.t("Save appearance") }}</button>
   </form>
 </section>
@@ -41,12 +41,14 @@
 <section class="section" aria-labelledby="import-heading">
   <div class="section-head"><h2 id="import-heading">{{ lang.t("Import a JSON export") }}</h2></div>
   {% if let Some(e) = import_error %}<p class="field-error" role="alert" id="import-error">{{ e }}</p>{% endif %}
-  <form method="post" action="/settings/import" enctype="multipart/form-data" class="card" aria-labelledby="import-heading">
-    <div class="field">
-      <label for="file">{{ lang.t("Export file") }}</label>
-      <input type="file" id="file" name="file" accept="application/json,.json" required aria-describedby="file-hint{% if import_error.is_some() %} import-error{% endif %}" {% if import_error.is_some() %}aria-invalid="true"{% endif %}>
-      <p class="hint" id="file-hint">{{ lang.t("Only possible while this installation has no foods, diary entries or weights.") }}</p>
+  <form method="post" action="/settings/import" enctype="multipart/form-data" aria-labelledby="import-heading">
+    <div class="group">
+      <div class="form-row stacked">
+        <label for="file">{{ lang.t("Export file") }}</label>
+        <input type="file" id="file" name="file" accept="application/json,.json" required aria-describedby="file-hint{% if import_error.is_some() %} import-error{% endif %}" {% if import_error.is_some() %}aria-invalid="true"{% endif %}>
+      </div>
     </div>
+    <p class="group-foot" id="file-hint">{{ lang.t("Only possible while this installation has no foods, diary entries or weights.") }}</p>
     <button type="submit" class="block">{{ lang.t("Import") }}</button>
   </form>
 </section>

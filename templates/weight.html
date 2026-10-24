@@ -35,28 +35,28 @@
 <section class="section" aria-labelledby="record-heading">
   <div class="section-head"><h2 id="record-heading">{{ lang.t("Record weight") }}</h2></div>
   {% include "_errors.html" %}
-  <form method="post" action="/weight" class="card">
-    <div class="field-row">
-      <div class="field">
-        <label for="weight">{{ lang.f1("Weight ({0})", unit) }}</label>
-        <div class="input-unit amount-input">
+  <form method="post" action="/weight">
+    <div class="group">
+      <div class="form-row">
+        <label for="weight">{{ lang.t("Weight") }}<span class="visually-hidden"> ({{ unit }})</span></label>
+        <div class="control amount-input">
           <input type="text" id="weight" name="weight" value="{{ weight }}" inputmode="decimal" required autocomplete="off" {% if errors.has("weight") %}aria-invalid="true" aria-describedby="weight-error"{% endif %}>
-          <span aria-hidden="true">{{ unit }}</span>
+          <span class="unit" aria-hidden="true">{{ unit }}</span>
         </div>
         {% if let Some(e) = errors.get("weight") %}<p class="field-error" id="weight-error">{{ e }}</p>{% endif %}
       </div>
-      <div class="field">
+      <div class="form-row">
         <label for="date">{{ lang.t("Date") }}</label>
-        <input type="date" id="date" name="date" value="{{ date }}" required {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}>
+        <div class="control"><input type="date" id="date" name="date" value="{{ date }}" required data-calendar {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}></div>
         {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
       </div>
+      <div class="form-row">
+        <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+        <div class="control"><input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off" aria-describedby="note-hint{% if errors.has("note") %} note-error{% endif %}" {% if errors.has("note") %}aria-invalid="true"{% endif %}></div>
+        {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+      </div>
     </div>
-    <div class="field">
-      <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
-      <input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off" aria-describedby="note-hint{% if errors.has("note") %} note-error{% endif %}" {% if errors.has("note") %}aria-invalid="true"{% endif %}>
-      <p class="hint" id="note-hint">{{ lang.t("One entry per day; recording again for the same date replaces it. Your calorie target does not change automatically.") }}</p>
-      {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
-    </div>
+    <p class="group-foot" id="note-hint">{{ lang.t("One entry per day; recording again for the same date replaces it. Your calorie target does not change automatically.") }}</p>
     <button type="submit" class="primary block">{{ lang.t("Save weight") }}</button>
   </form>
 </section>
@@ -64,7 +64,7 @@
 <section class="section" aria-labelledby="history-heading">
   <div class="section-head"><h2 id="history-heading">{{ lang.t("History") }}</h2></div>
   {% if rows.is_empty() %}
-    <p class="list-empty card">{{ lang.t("No weights recorded yet.") }}</p>
+    <div class="list"><p class="list-empty">{{ lang.t("No weights recorded yet.") }}</p></div>
   {% else %}
   <ul class="list">
   {% for r in rows %}
