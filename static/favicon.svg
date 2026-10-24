@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Korpus</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b8cff"/>
+      <stop offset="1" stop-color="#0060c7"/>
+    </linearGradient>
+    <clipPath id="frame"><rect width="512" height="512" rx="112"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <g transform="translate(-4 -20) rotate(-9 256 300)">
+      <g fill="#fff">
+        <path d="M-60 446H366C422 446 450 408 442 358L392 200H318V240C320 270 314 290 298 298C294 232 238 194 178 200C122 206 96 254 88 310C60 320 20 324-60 326Z"/>
+        <rect x="286" y="94" width="126" height="120" rx="34"/>
+      </g>
+      <path d="M292 126H334M292 156H336M292 186H334" fill="none" stroke="#0a6fe0" stroke-width="12" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

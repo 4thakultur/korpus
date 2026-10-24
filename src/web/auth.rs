@@ -248,6 +248,9 @@ fn is_public(path: &str) -> bool {
             | "/readyz"
             | "/static/app.css"
             | "/static/app.js"
+            | "/static/favicon.svg"
+            | "/static/apple-touch-icon.png"
+            | "/apple-touch-icon.png"
     )
 }
 

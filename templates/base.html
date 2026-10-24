@@ -11,6 +11,8 @@
 {% match ui_theme %}{% when crate::web::Theme::Light %}<meta name="theme-color" content="#f2f2f7">{% when crate::web::Theme::Dark %}<meta name="theme-color" content="#000000">{% else %}<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">{% endmatch %}
 <title>{{ title }} · Korpus</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/app.css?v={{ crate::web::ASSET_VERSION }}">
 <script src="/static/app.js?v={{ crate::web::ASSET_VERSION }}" defer></script>
 </head>

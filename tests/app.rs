@@ -1798,6 +1798,13 @@ async fn every_page_requires_a_login() {
     assert_eq!(visitor.get("/login").await.status, StatusCode::OK);
     assert_eq!(visitor.get("/healthz").await.status, StatusCode::OK);
     assert_eq!(visitor.get("/static/app.css").await.status, StatusCode::OK);
+    for icon in [
+        "/static/favicon.svg",
+        "/static/apple-touch-icon.png",
+        "/apple-touch-icon.png",
+    ] {
+        assert_eq!(visitor.get(icon).await.status, StatusCode::OK, "{icon}");
+    }
     // A forged or unknown cookie is no session.
     let forged = visitor.as_visitor(Some(format!("korpus_session={}", "a".repeat(64))));
     assert_eq!(forged.get("/diary").await.status, StatusCode::SEE_OTHER);

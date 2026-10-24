@@ -118,6 +118,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
+        .route("/static/favicon.svg", get(static_favicon))
+        // Also at the root, where Safari looks when a page names no icon.
+        .route("/apple-touch-icon.png", get(static_touch_icon))
+        .route("/static/apple-touch-icon.png", get(static_touch_icon))
         .route("/healthz", get(|| async { "ok" }))
         .route("/readyz", get(readyz))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
@@ -327,7 +331,7 @@ async fn readyz(State(state): State<AppState>) -> Response {
     }
 }
 
-fn static_asset(content_type: &'static str, body: &'static str) -> Response {
+fn static_asset(content_type: &'static str, body: &'static [u8]) -> Response {
     (
         [
             (header::CONTENT_TYPE, content_type),
@@ -339,11 +343,25 @@ fn static_asset(content_type: &'static str, body: &'static str) -> Response {
 }
 
 async fn static_css() -> Response {
-    static_asset("text/css; charset=utf-8", APP_CSS)
+    static_asset("text/css; charset=utf-8", APP_CSS.as_bytes())
 }
 
 async fn static_js() -> Response {
-    static_asset("text/javascript; charset=utf-8", APP_JS)
+    static_asset("text/javascript; charset=utf-8", APP_JS.as_bytes())
+}
+
+async fn static_favicon() -> Response {
+    static_asset("image/svg+xml", include_bytes!("../../static/favicon.svg"))
+}
+
+/// Safari uses this for bookmarks, Favorites and home-screen icons; SVG is
+/// not accepted there. Regenerate it from favicon.svg (full-bleed: iOS
+/// rounds the corners itself) when the icon changes.
+async fn static_touch_icon() -> Response {
+    static_asset(
+        "image/png",
+        include_bytes!("../../static/apple-touch-icon.png"),
+    )
 }
 
 const APP_CSS: &str = include_str!("../../static/app.css");
