@@ -19,11 +19,20 @@ track your weight and set a calorie target if you want one.
 
 ```sh
 cp .env.example .env        # optional: adjust settings
+mkdir -p data               # before the first start, so it belongs to you
 docker compose up -d --build
 ```
 
-Open <http://localhost:9874>. The database is stored in the `korpus-data`
-volume.
+Open <http://localhost:9874>. The database is stored in `./data` (set
+`DATA_DIR` in `.env` to put it elsewhere). The container runs as `PUID:PGID`
+(default `1000:1000`), which must be able to write that directory; Docker
+would create a missing one owned by root.
+
+The web UI is published on `127.0.0.1` only. When your reverse proxy runs in
+another container or on another machine, it cannot reach that address: set
+`KORPUS_HTTP_BIND=0.0.0.0` in `.env` (or another interface address), and read
+[Security and network exposure](#security-and-network-exposure) first.
+`KORPUS_HTTP_PORT` changes the published port.
 
 ### From source
 
@@ -142,7 +151,7 @@ Other built-in protections:
 - **Security headers.** A strict Content-Security-Policy with no inline scripts or styles, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` and same-origin `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy`.
 - **Limits.** Request bodies, queries, page sizes and provider calls are all bounded. Provider responses are capped at 8 MB and redirects are only followed within the same host. Uploaded spreadsheets and archives are checked for decompression bombs, and only one import or backup runs at a time. SQL is always parameterized and templates escape their output.
 - **Backups.** The temporary copy made for **Download backup** is written to a directory only the Korpus user can read and deleted right after.
-- **Container.** `compose.yaml` runs Korpus as an unprivileged user with a read-only root filesystem, no Linux capabilities and `no-new-privileges`; only `/data` and a `/tmp` tmpfs are writable.
+- **Container.** `compose.yaml` runs Korpus as an unprivileged user (`PUID:PGID`) with a read-only root filesystem, no Linux capabilities and `no-new-privileges`; only `/data` and a `/tmp` tmpfs are writable.
 - **Logs.** Log lines record the method and path only. Search terms, diary contents and weights are never logged.
 
 ## External network use
@@ -380,17 +389,16 @@ inconsistent.
 2. Replace `korpus.db` with the backup file, and delete any `korpus.db-wal` and `korpus.db-shm` next to it.
 3. Start Korpus. Pending migrations run automatically.
 
-With Docker, the database is at `/data/korpus.db` in the `korpus-data` volume:
+With Docker, the database is `korpus.db` in the data directory (`./data`
+unless `DATA_DIR` says otherwise):
 
 ```sh
 docker compose stop
-docker run --rm -v korpus_korpus-data:/data -v "$PWD":/backup debian:bookworm-slim \
-  sh -c 'cp /backup/korpus-2026-10-22.db /data/korpus.db && rm -f /data/korpus.db-wal /data/korpus.db-shm && chown 10001:10001 /data/korpus.db'
+cp korpus-2026-10-22.db data/korpus.db && rm -f data/korpus.db-wal data/korpus.db-shm
 docker compose start
 ```
 
-The volume name depends on your compose project directory; check it with
-`docker volume ls`.
+Copy as the user set in `PUID`/`PGID`, so Korpus can still write the file.
 
 The database backup includes imported food composition tables. The JSON
 export does not: import the tables again after restoring from JSON. Foods you
@@ -409,6 +417,21 @@ changes nothing.
 
 Downgrades are not supported. To go back, restore the backup taken before the
 upgrade.
+
+**Data directory (Docker):** `compose.yaml` used to keep the database in a
+named volume (`korpus_korpus-data`); it now uses `./data`. To keep an existing
+database, copy it over before starting the new version:
+
+```sh
+docker compose down
+mkdir -p data
+docker run --rm -v korpus_korpus-data:/old -v "$PWD/data":/new debian:bookworm-slim \
+  sh -c 'cp -a /old/. /new/ && chown -R 1000:1000 /new'
+docker compose up -d --build
+```
+
+Use your `PUID:PGID` instead of `1000:1000` if you changed them. Remove the old
+volume (`docker volume rm korpus_korpus-data`) once Korpus works.
 
 **Host name check:** Korpus now refuses requests for host names it does not
 know. If you open it by a name rather than an IP address or `localhost`, set

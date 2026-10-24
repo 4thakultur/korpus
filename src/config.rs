@@ -69,6 +69,9 @@ impl Config {
     }
 
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
+        // An empty value counts as unset, so compose files can pass every
+        // variable through as `${VAR:-}` without overriding the defaults.
+        let get = |k: &str| get(k).filter(|v| !v.trim().is_empty());
         let var = |k: &str, default: &str| get(k).unwrap_or_else(|| default.to_string());
 
         let bind_s = var("KORPUS_BIND", "127.0.0.1:9874");
@@ -95,8 +98,7 @@ impl Config {
                 reason: "expected a whole number of seconds between 1 and 60".into(),
             })?;
 
-        let contact = get("KORPUS_CONTACT").filter(|c| !c.trim().is_empty());
-        let user_agent = match contact {
+        let user_agent = match get("KORPUS_CONTACT") {
             Some(c) => format!("Korpus/{} ({})", env!("CARGO_PKG_VERSION"), c.trim()),
             None => format!("Korpus/{} (self-hosted)", env!("CARGO_PKG_VERSION")),
         };
@@ -197,6 +199,23 @@ mod tests {
         assert_eq!(c.bind.to_string(), "127.0.0.1:9874");
         assert!(c.off_enabled);
         assert_eq!(c.default_timezone, "UTC");
+    }
+
+    #[test]
+    fn empty_values_use_defaults() {
+        let c = cfg(&[
+            ("KORPUS_BIND", ""),
+            ("KORPUS_OFF_ENABLED", " "),
+            ("KORPUS_PROVIDER_TIMEOUT_SECS", ""),
+            ("KORPUS_DEFAULT_TIMEZONE", ""),
+            ("KORPUS_DATABASE_URL", ""),
+        ])
+        .unwrap();
+        assert_eq!(c.bind.to_string(), "127.0.0.1:9874");
+        assert!(c.off_enabled);
+        assert_eq!(c.provider_timeout, Duration::from_secs(8));
+        assert_eq!(c.default_timezone, "UTC");
+        assert_eq!(c.database_url, "sqlite://data/korpus.db");
     }
 
     #[test]

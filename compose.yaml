@@ -1,31 +1,47 @@
-# Start: docker compose up -d   ·   Open: http://localhost:9874
+# Settings come from a `.env` file next to this one (copy `.env.example`).
+# Every value has a working default, so `.env` is optional.
+# Start: mkdir -p data && docker compose up -d   ·   Open: http://localhost:9874
 services:
   korpus:
     build: .
     image: korpus:latest
+    container_name: korpus
     restart: unless-stopped
-    env_file:
-      - path: .env
-        required: false
+    # Run as the owner of the data directory so the database is not root-owned.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      # Defaults to this machine only. Korpus speaks plain HTTP, so before
+      # opening it to your network read "Security and network exposure" in
+      # the README.
+      - "${KORPUS_HTTP_BIND:-127.0.0.1}:${KORPUS_HTTP_PORT:-9874}:9874"
+    volumes:
+      # Create the directory before the first start (see README); Docker
+      # would otherwise create it owned by root and Korpus could not write.
+      - ${DATA_DIR:-./data}:/data
     environment:
       KORPUS_BIND: 0.0.0.0:9874
       KORPUS_DATABASE_URL: sqlite:///data/korpus.db
-    # Published on localhost only. To reach it from other devices, put a
-    # reverse proxy with TLS in front (see README) and set
-    # KORPUS_TRUSTED_PROXIES in .env so failed logins count per client.
-    ports:
-      - "127.0.0.1:9874:9874"
-    volumes:
-      - korpus-data:/data
+      KORPUS_LOG: ${KORPUS_LOG:-korpus=info,tower_http=warn}
+      # Empty values fall back to Korpus's defaults (see README, Configuration).
+      KORPUS_ALLOWED_HOSTS: ${KORPUS_ALLOWED_HOSTS:-}
+      KORPUS_TRUSTED_PROXIES: ${KORPUS_TRUSTED_PROXIES:-}
+      KORPUS_DEFAULT_TIMEZONE: ${KORPUS_DEFAULT_TIMEZONE:-}
+      KORPUS_OFF_ENABLED: ${KORPUS_OFF_ENABLED:-}
+      KORPUS_OFF_BASE_URL: ${KORPUS_OFF_BASE_URL:-}
+      KORPUS_OFF_SEARCH_URL: ${KORPUS_OFF_SEARCH_URL:-}
+      KORPUS_CONTACT: ${KORPUS_CONTACT:-}
+      KORPUS_PROVIDER_TIMEOUT_SECS: ${KORPUS_PROVIDER_TIMEOUT_SECS:-}
     # Hardening: everything Korpus writes lives in /data (database) and
     # /tmp (short-lived backup copies); it needs no Linux capabilities.
     read_only: true
     tmpfs:
       - /tmp
-    cap_drop:
-      - ALL
+    cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-
-volumes:
-  korpus-data:
+    # Keep container logs from slowly filling the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
