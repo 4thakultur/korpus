@@ -9,13 +9,15 @@
 //! never delays local search.
 
 use askama::Template;
+use axum::Form;
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
 use super::{
-    AppState, LogContext, current_lang, flash_message, render, url_encode, wants_fragment,
+    AppState, LogContext, current_lang, flash_message, render, see_other, url_encode,
+    wants_fragment,
 };
 use crate::datasets;
 use crate::error::AppResult;
@@ -281,6 +283,7 @@ pub async fn page(
     // results are fetched before rendering.
     let inline_remote = search_remote && sq.remote.is_some();
 
+    // An empty query lists the history of logged foods.
     let local = foods::search(&state.db, &q, page, lang).await?;
     let mut items: Vec<ResultItem> = local
         .foods
@@ -392,4 +395,23 @@ pub async fn remote_fragment(
         ctx,
     };
     Ok(render(&fragment)?.into_response())
+}
+
+#[derive(Deserialize)]
+pub struct ClearHistoryForm {
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    meal: String,
+}
+
+/// Empties the list of recently logged foods, keeping the logging context.
+pub async fn clear_history(
+    State(state): State<AppState>,
+    Form(form): Form<ClearHistoryForm>,
+) -> AppResult<Response> {
+    foods::clear_history(&state.db).await?;
+    let url = LogContext::from_parts(Some(&form.date), Some(&form.meal)).url("/search");
+    let sep = if url.contains('?') { "&" } else { "?" };
+    Ok(see_other(&format!("{url}{sep}msg=history_cleared")))
 }

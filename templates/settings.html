@@ -75,7 +75,7 @@
         <button type="submit" class="block">{% if d.status.is_some() %}{{ lang.t("Import and replace") }}{% else %}{{ lang.t("Import") }}{% endif %}</button>
       </form>
       {% if d.status.is_some() %}
-      <form method="post" action="/settings/datasets/{{ d.id }}/remove" class="dataset-remove" data-confirm="{{ lang.f1("Remove {0}? Foods you already saved from it are kept.", d.name) }}">
+      <form method="post" action="/settings/datasets/{{ d.id }}/remove" class="dataset-remove" data-confirm-action="{{ lang.t("Remove") }}" data-confirm="{{ lang.f1("Remove {0}? Foods you already saved from it are kept.", d.name) }}">
         <button type="submit" class="danger block">{{ lang.t("Remove table") }}</button>
       </form>
       {% endif %}

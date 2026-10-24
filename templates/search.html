@@ -19,12 +19,21 @@
 </form>
 
 <section class="section" aria-labelledby="results-heading" id="results" aria-live="polite" aria-busy="false"{% if let Some(src) = pending_src %} data-src="{{ src }}"{% endif %}>
-  <div class="section-head"><h2 id="results-heading"{% if !q.is_empty() %} class="visually-hidden"{% endif %}>{% if q.is_empty() %}{{ lang.t("Your foods") }}{% else %}{{ lang.t("Results") }}{% endif %}</h2></div>
+  <div class="section-head">
+    <h2 id="results-heading"{% if !q.is_empty() %} class="visually-hidden"{% endif %}>{% if q.is_empty() %}{{ lang.t("History") }}{% else %}{{ lang.t("Results") }}{% endif %}</h2>
+    {% if q.is_empty() && !items.is_empty() %}
+    <form method="post" action="/search/history/clear" class="inline" data-confirm="{{ lang.t("Clear history?") }}" data-confirm-detail="{{ lang.t("Your diary and saved foods are kept.") }}" data-confirm-action="{{ lang.t("Clear") }}">
+      {% if ctx.date.is_some() %}<input type="hidden" name="date" value="{{ ctx.date_str() }}">{% endif %}
+      {% if ctx.meal.is_some() %}<input type="hidden" name="meal" value="{{ ctx.meal_str() }}">{% endif %}
+      <button type="submit" class="plain" aria-label="{{ lang.t("Clear history") }}">{{ lang.t("Clear") }}</button>
+    </form>
+    {% endif %}
+  </div>
   <ul class="results" id="result-list">
     {% for item in items %}{% include "_result_item.html" %}{% endfor %}
   </ul>
   {% if pending_src.is_some() %}<p class="js-only loading" id="results-loading">{{ lang.t("Searching food databases…") }}</p>{% endif %}
-  <p class="list-empty card" id="no-results"{% if !items.is_empty() || pending_src.is_some() %} hidden{% endif %}>{% if q.is_empty() %}{{ lang.t("You have not saved any foods yet.") }}{% else %}{{ lang.t("No results.") }}{% endif %}</p>
+  <p class="list-empty card" id="no-results"{% if !items.is_empty() || pending_src.is_some() %} hidden{% endif %}>{% if q.is_empty() %}{{ lang.t("Foods you add to your diary will appear here.") }}{% else %}{{ lang.t("No results.") }}{% endif %}</p>
   <div id="results-errors">{% for e in errors %}<p class="warning" role="alert"><span aria-hidden="true">⚠</span> {{ e }} {{ lang.t("Your own foods still work.") }}</p>{% endfor %}</div>
   {% if prev_url.is_some() || next_url.is_some() || next_if_more_url.is_some() %}
   <nav class="pager" aria-label="{{ lang.t("Result pages") }}">

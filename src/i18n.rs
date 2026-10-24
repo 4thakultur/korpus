@@ -987,11 +987,33 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Buscar alimentos por nombre, marca o código de barras",
     ),
     ("Search", "Rechercher", "Buscar"),
-    ("Your foods", "Vos aliments", "Sus alimentos"),
+    ("Clear", "Effacer", "Borrar"),
     (
-        "You have not saved any foods yet.",
-        "Vous n'avez encore enregistré aucun aliment.",
-        "Todavía no ha guardado ningún alimento.",
+        "Clear history?",
+        "Effacer l'historique ?",
+        "¿Borrar el historial?",
+    ),
+    (
+        "Your diary and saved foods are kept.",
+        "Votre journal et vos aliments enregistrés sont conservés.",
+        "Se conservan su diario y sus alimentos guardados.",
+    ),
+    ("Delete", "Supprimer", "Eliminar"),
+    ("Remove", "Retirer", "Quitar"),
+    (
+        "Clear history",
+        "Effacer l'historique",
+        "Borrar el historial",
+    ),
+    (
+        "Foods you add to your diary will appear here.",
+        "Les aliments que vous ajoutez au journal apparaîtront ici.",
+        "Los alimentos que añada al diario aparecerán aquí.",
+    ),
+    (
+        "History cleared. Your diary and saved foods are unchanged.",
+        "Historique effacé. Votre journal et vos aliments enregistrés sont inchangés.",
+        "Historial borrado. Su diario y sus alimentos guardados no han cambiado.",
     ),
     ("Can't find it?", "Introuvable ?", "¿No lo encuentra?"),
     (

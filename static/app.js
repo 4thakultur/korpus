@@ -451,14 +451,65 @@
     window.addEventListener("pageshow", function (e) { if (e.persisted) finish(); });
   }
 
+  // Destructive form posts are confirmed in an alert styled like iOS:
+  // data-confirm is the title, data-confirm-detail an optional message and
+  // data-confirm-action the destructive button's label.
+  var confirmAlert = null;
+
+  function buildConfirm() {
+    var d = document.createElement("dialog");
+    d.className = "alert";
+    d.setAttribute("role", "alertdialog");
+    d.setAttribute("aria-labelledby", "alert-title");
+    d.setAttribute("aria-describedby", "alert-detail");
+    d.innerHTML =
+      '<div class="alert-text"><h2 id="alert-title"></h2><p id="alert-detail"></p></div>' +
+      '<div class="alert-actions"><button type="button" class="alert-cancel"></button>' +
+      '<button type="button" class="alert-confirm"></button></div>';
+    d.querySelector(".alert-cancel").textContent = t("cancel", "Cancel");
+    d.querySelector(".alert-cancel").addEventListener("click", function () { d.close(); });
+    d.querySelector(".alert-confirm").addEventListener("click", function () {
+      var form = d.form;
+      d.close();
+      // submit() skips the submit event, so the alert does not open again.
+      if (form && form.isConnected) form.submit();
+    });
+    d.addEventListener("close", function () {
+      if (d.opener && d.opener.isConnected) d.opener.focus();
+      d.form = null;
+      d.opener = null;
+    });
+    document.body.appendChild(d);
+    return d;
+  }
+
+  function showConfirm(form) {
+    var d = confirmAlert || (confirmAlert = buildConfirm());
+    var detail = form.getAttribute("data-confirm-detail") || "";
+    d.querySelector("#alert-title").textContent = form.getAttribute("data-confirm");
+    var p = d.querySelector("#alert-detail");
+    p.textContent = detail;
+    p.hidden = !detail;
+    d.querySelector(".alert-confirm").textContent =
+      form.getAttribute("data-confirm-action") || t("delete", "Delete");
+    d.form = form;
+    d.opener = document.activeElement;
+    d.showModal();
+    // The safe choice has focus, as on iOS.
+    d.querySelector(".alert-cancel").focus();
+  }
+
   onReady(function () {
     var tabBar = document.querySelector(".tab-bar");
     if (tabBar) setupTabPill(tabBar);
 
-    document.querySelectorAll("form[data-confirm]").forEach(function (f) {
-      f.addEventListener("submit", function (e) {
-        if (!window.confirm(f.getAttribute("data-confirm"))) e.preventDefault();
-      });
+    // Delegated so forms inserted later (live search results) are covered.
+    document.addEventListener("submit", function (e) {
+      var f = e.target;
+      if (!(f instanceof HTMLFormElement) || !f.hasAttribute("data-confirm")) return;
+      if (!window.HTMLDialogElement) return; // submits unconfirmed, as without the script
+      e.preventDefault();
+      showConfirm(f);
     });
 
     // Preview the appearance as soon as it is picked; saving stores it.

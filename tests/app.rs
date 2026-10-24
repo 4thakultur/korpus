@@ -1414,3 +1414,71 @@ async fn food_tables_are_imported_from_settings_uploads() {
         .await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn foods_page_lists_logged_foods_and_history_can_be_cleared() {
+    let a = app().await;
+    a.setup().await;
+    let oats = a.create_oats().await;
+    let r = a
+        .post(
+            "/foods",
+            "name=Plain+yogurt&brand=&barcode=&basis=g&energy=60&energy_unit=kcal&protein=4&carbs=5&fat=3",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+
+    // Saved or opened foods are not history; only logged ones are.
+    let page = a.get("/search").await;
+    assert!(
+        page.body
+            .contains("Foods you add to your diary will appear here.")
+    );
+    assert!(!page.body.contains("Rolled oats"));
+    assert!(!page.body.contains("/search/history/clear"));
+
+    for _ in 0..2 {
+        a.post(
+            "/diary/entries",
+            &format!("food_id={oats}&date=2026-03-10&meal=breakfast&amount=50"),
+        )
+        .await;
+    }
+    let page = a.get("/search").await;
+    let list = &page.body[page.body.find("id=\"result-list\"").unwrap()..];
+    let list = &list[..list.find("</ul>").unwrap()];
+    assert_eq!(list.matches("Rolled oats").count(), 1, "listed once");
+    assert!(!list.contains("Plain yogurt"));
+    assert!(page.body.contains("action=\"/search/history/clear\""));
+    assert!(page.body.contains("data-confirm=\"Clear history?"));
+
+    // Make the existing entries older than the moment of clearing.
+    sqlx::query("UPDATE diary_entries SET created_at = '2026-03-10T08:00:00Z'")
+        .execute(&a.db)
+        .await
+        .unwrap();
+    let r = a
+        .post("/search/history/clear", "date=2026-03-10&meal=lunch")
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/search?date=2026-03-10&meal=lunch&msg=history_cleared")
+    );
+    let page = a.get("/search").await;
+    assert!(!page.body.contains("Rolled oats"));
+    // The diary itself is untouched.
+    assert_eq!(a.day_kcal("2026-03-10").await, "370");
+
+    // Logging again brings a food back.
+    sqlx::query("UPDATE profile SET history_cleared_at = '2026-03-10T09:00:00Z'")
+        .execute(&a.db)
+        .await
+        .unwrap();
+    a.post(
+        "/diary/entries",
+        &format!("food_id={oats}&date=2026-03-11&meal=lunch&amount=10"),
+    )
+    .await;
+    assert!(a.get("/search").await.body.contains("Rolled oats"));
+}

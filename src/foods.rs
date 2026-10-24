@@ -577,8 +577,43 @@ pub struct SearchPage {
     pub has_more: bool,
 }
 
-/// Searches local foods, with names in `lang`. An empty query lists
-/// recently updated foods.
+/// Foods logged in the diary since the history was last cleared, most
+/// recently logged first, with names in `lang`. Foods that were only opened
+/// or saved are not part of it.
+pub async fn history(db: &SqlitePool, page: usize, lang: Lang) -> AppResult<SearchPage> {
+    let offset = page.saturating_sub(1) * PAGE_SIZE;
+    let mut foods = sqlx::query_as::<_, Food>(AssertSqlSafe(format!(
+        "SELECT {FOOD_COLUMNS} FROM foods
+         JOIN (SELECT food_id, MAX(created_at) AS last_logged, MAX(id) AS last_entry
+               FROM diary_entries
+               WHERE food_id IS NOT NULL
+                 AND created_at > COALESCE((SELECT history_cleared_at FROM profile WHERE id = 1), '')
+               GROUP BY food_id) AS logged ON logged.food_id = foods.id
+         ORDER BY logged.last_logged DESC, logged.last_entry DESC LIMIT ? OFFSET ?"
+    )))
+    .bind((PAGE_SIZE + 1) as i64)
+    .bind(offset as i64)
+    .fetch_all(db)
+    .await?;
+    let has_more = foods.len() > PAGE_SIZE;
+    foods.truncate(PAGE_SIZE);
+    let foods = with_names(db, foods, Some(lang)).await?;
+    Ok(SearchPage { foods, has_more })
+}
+
+/// Empties the history of logged foods. Diary entries and saved foods are
+/// kept; foods logged afterwards appear again.
+pub async fn clear_history(db: &SqlitePool) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE profile SET history_cleared_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 1",
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Searches local foods, with names in `lang`. An empty query lists the
+/// history of logged foods.
 pub async fn search(
     db: &SqlitePool,
     query: &str,
@@ -588,17 +623,7 @@ pub async fn search(
     let q = normalize(query);
     let offset = page.saturating_sub(1) * PAGE_SIZE;
     if q.is_empty() {
-        let mut foods = sqlx::query_as::<_, Food>(AssertSqlSafe(format!(
-            "SELECT {FOOD_COLUMNS} FROM foods ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?"
-        )))
-        .bind((PAGE_SIZE + 1) as i64)
-        .bind(offset as i64)
-        .fetch_all(db)
-        .await?;
-        let has_more = foods.len() > PAGE_SIZE;
-        foods.truncate(PAGE_SIZE);
-        let foods = with_names(db, foods, Some(lang)).await?;
-        return Ok(SearchPage { foods, has_more });
+        return history(db, page, lang).await;
     }
 
     let query = Query::new(&q);
