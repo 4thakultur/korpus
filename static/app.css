@@ -593,6 +593,14 @@ input[type="radio"], input[type="checkbox"] {
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
 }
 .segmented input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 1px; }
+/* The same control as links between the pages of one tab. */
+.seg-links { margin: 0 0 20px; }
+.seg-links a { flex: 1 1 0; min-width: 0; display: flex; text-decoration: none; border-radius: 999px; }
+.seg-links a[aria-current="page"] span {
+  background: var(--segment-on); font-weight: 600;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+.seg-links a:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 
 /* Choice list: one row per option with a checkmark, like iOS settings. */
 .choices { list-style: none; margin: 0; padding: 0; background: var(--fill); border-radius: var(--radius-sm); overflow: hidden; }
@@ -680,6 +688,38 @@ dialog.alert::backdrop { background: rgba(0, 0, 0, 0.4); animation: alert-fade 0
 }
 .alert-cancel { background: var(--fill-strong); color: var(--label); }
 .alert-confirm { background: var(--danger-fill); color: var(--danger); }
+/* ---------- Action sheet (meal choice) ---------- */
+dialog.sheet {
+  width: min(420px, calc(100vw - 2 * var(--gutter)));
+  max-height: none; margin: auto auto max(16px, env(safe-area-inset-bottom)); padding: 0;
+  border: 0; background: transparent; color: var(--label);
+  animation: sheet-in 0.25s ease-out;
+}
+@media (min-width: 640px) { dialog.sheet { margin: auto; animation-name: alert-in; } }
+dialog.sheet::backdrop { background: rgba(0, 0, 0, 0.4); animation: alert-fade 0.2s ease-out; }
+.sheet-group, .sheet-cancel {
+  border-radius: 14px; background: var(--elevated); box-shadow: var(--glass-shadow);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sheet-group {
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%);
+  }
+}
+.sheet-group { display: flex; flex-direction: column; overflow: hidden; }
+.sheet-title {
+  margin: 0; padding: 14px 16px; text-align: center;
+  font-size: 0.8125rem; font-weight: 600; line-height: 1.3; color: var(--label-2);
+}
+.sheet-group button, .sheet-cancel {
+  min-height: 56px; padding: 0 16px; border-radius: 0;
+  background: transparent; color: var(--tint); font-size: 1.25rem; font-weight: 400;
+}
+.sheet-group button { border-top: 1px solid var(--separator); }
+.sheet-group button:hover, .sheet-group button:focus-visible { background: var(--fill); }
+.sheet-group button:focus-visible, .sheet-cancel:focus-visible { outline-offset: -3px; }
+.sheet-cancel { width: 100%; margin-top: 8px; border-radius: 14px; background: var(--elevated); font-weight: 600; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(40px); } }
 @keyframes alert-in { from { opacity: 0; transform: scale(1.08); } }
 @keyframes alert-fade { from { opacity: 0; } }
 .calendar-head { display: flex; align-items: center; justify-content: space-between; padding: 0 4px 0 8px; }
@@ -1041,6 +1081,116 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .qr-frame .qr { display: block; width: 200px; height: 200px; }
 code.secret { overflow-wrap: anywhere; letter-spacing: 0.04em; user-select: all; }
 
+/* ---------- Gym ---------- */
+ol.list { list-style: none; margin: 0; padding: 0; }
+.activate-form { margin: 0 0 24px; }
+.week-day-head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 16px; }
+.week-day-head h3 { margin: 0; font-size: 1.0625rem; font-weight: 600; }
+.week-day.is-today .week-day-head h3 { color: var(--tint); }
+.week-day .badge { background: var(--tint-fill); color: var(--tint); }
+.rest-pill {
+  display: inline-flex; align-items: center; margin-left: auto; min-height: 26px; padding: 0 10px;
+  font-size: 0.8125rem; font-weight: 500; color: var(--label-2); background: var(--fill);
+}
+.week-routines { list-style: none; margin: 0; padding: 0 0 4px; }
+.week-routines .row { padding-top: 8px; padding-bottom: 8px; }
+.list .week-routines li + li::before { left: 56px; }
+.gym-icon {
+  width: 28px; height: 28px; padding: 4px; border-radius: 8px; flex: none;
+  background: var(--tint-fill); color: var(--tint);
+}
+.list li:has(> .row > .gym-icon) + li::before { left: 56px; }
+.list-title { margin: 20px 16px 8px; font-size: 0.8125rem; font-weight: 400; color: var(--label-2); }
+.step-number {
+  display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--fill); color: var(--label); font-family: var(--font-rounded);
+  font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.list li:has(> .row > .step-number) + li::before { left: 56px; }
+.reorder-row { padding-top: 0; padding-bottom: 0; padding-right: 4px; }
+.row-link { align-self: stretch; justify-content: center; padding: 11px 0; color: var(--label); }
+.row-link:hover { text-decoration: none; }
+.row-link:hover .row-title { text-decoration: underline; text-underline-offset: 0.15em; }
+.reorder { display: flex; flex: none; }
+.reorder form { margin: 0; }
+.reorder .icon-button { min-width: 40px; min-height: 40px; }
+.icon-button:disabled { opacity: 0.3; cursor: default; background: transparent; }
+.plan { font-weight: 600; color: var(--label); }
+.chips {
+  display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none;
+  margin: -8px calc(-1 * var(--gutter)) 16px; padding: 2px var(--gutter) 6px;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chips a {
+  flex: none; display: inline-flex; align-items: center; min-height: 36px; padding: 0 14px;
+  border-radius: 999px; background: var(--fill-strong); color: var(--label);
+  font-size: 0.9375rem; font-weight: 500; text-decoration: none; white-space: nowrap;
+}
+.chips a[aria-current="true"] { background: var(--tint); color: var(--on-tint); font-weight: 600; }
+.chips a:focus-visible { outline-offset: 1px; }
+button.starter-row {
+  width: 100%; justify-content: flex-start; gap: 12px; padding: 11px 16px; border-radius: 0;
+  background: transparent; color: var(--label); font-weight: 400; letter-spacing: normal; text-align: left;
+}
+button.starter-row:hover { opacity: 1; }
+button.starter-row.add-row { color: var(--tint); }
+
+/* Workout logging: one table of sets per exercise. */
+.plan-hint { margin: -2px 4px 8px; }
+.progress-note { margin: 0 0 8px; }
+.set-list { overflow-x: auto; }
+.set-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.set-table th, .set-table td { padding: 6px 4px; text-align: center; vertical-align: middle; }
+.set-table th:first-child, .set-table td:first-child { padding-left: 12px; }
+.set-table th:last-child, .set-table td:last-child { padding-right: 12px; }
+.set-table thead th {
+  padding-top: 10px; padding-bottom: 4px;
+  font-size: 0.8125rem; font-weight: 500; color: var(--label-2);
+}
+.set-table tbody th { width: 2.5rem; font-family: var(--font-rounded); font-weight: 600; }
+.set-table tbody tr:not(.set-error-row) + tr th,
+.set-table tbody tr:not(.set-error-row) + tr td { border-top: 0.5px solid var(--separator); }
+.set-table tbody tr.set-error-row td { border-top: 0; text-align: left; padding-top: 0; }
+.set-error-row .field-error { margin: 0 0 4px; }
+.set-previous { font-size: 0.875rem; color: var(--label-2); white-space: nowrap; }
+.set-table input[type="text"] {
+  width: 4.25rem; min-height: 40px; padding: 6px 4px; text-align: center; font-variant-numeric: tabular-nums;
+}
+.set-table.has-done th:last-child, .set-table.has-done td:last-child { width: 3rem; }
+.set-table tr.is-done td, .set-table tr.is-done th { background: color-mix(in srgb, var(--energy) 12%, transparent); }
+.set-done {
+  appearance: none; -webkit-appearance: none; display: inline-grid; place-items: center; margin: 0;
+  width: 32px; height: 32px; border-radius: 50%; border: 2px solid var(--field-border);
+  background: transparent; cursor: pointer; vertical-align: middle;
+}
+.set-done::after {
+  content: ""; width: 12px; height: 7px; margin-top: -3px;
+  border: solid transparent; border-width: 0 0 2.5px 2.5px; transform: rotate(-45deg);
+}
+.set-done:checked { background: var(--energy-text); border-color: var(--energy-text); }
+.set-done:checked::after { border-color: #fff; }
+.set-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 0; }
+.set-actions .pill:disabled { opacity: 0.4; cursor: default; }
+.danger-text { color: var(--danger); margin-left: auto; }
+.rest-timer {
+  position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
+  bottom: calc(var(--tabbar-h) + 28px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 18px;
+  width: max-content; max-width: calc(100% - 2 * var(--gutter));
+  border-radius: 999px; background: var(--glass); box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(180%); backdrop-filter: blur(24px) saturate(180%);
+}
+.rest-label { color: var(--label-2); font-size: 0.9375rem; }
+.rest-left { min-width: 3.5em; font-family: var(--font-rounded); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.workout-stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 10px; margin: 0 0 24px;
+}
+.workout-stats div { background: var(--card); border-radius: var(--radius-md); padding: 12px 14px; box-shadow: var(--shadow); }
+.workout-stats dt { font-size: 0.8125rem; color: var(--label-2); }
+.workout-stats dd { margin: 2px 0 0; font-family: var(--font-rounded); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pager { display: flex; justify-content: space-between; gap: 10px; margin: 16px 0; }
+.pager .older { margin-left: auto; }
+
 /* Progressive enhancement helpers: toggled by app.js. */
 .js-only { display: none; }
 .js .js-only { display: flex; }
@@ -1053,6 +1203,10 @@ code.secret { overflow-wrap: anywhere; letter-spacing: 0.04em; user-select: all;
   .ring .ring-value, .mini-ring .ring-value, .chart .line { stroke: CanvasText; }
   .dot, .split-bar rect { forced-color-adjust: none; }
   .segmented input:checked + span { outline: 2px solid Highlight; }
+  .seg-links a[aria-current="page"] span { outline: 2px solid Highlight; }
+  .chips a[aria-current="true"] { outline: 2px solid Highlight; }
+  .set-done:checked { forced-color-adjust: none; background: Highlight; border-color: Highlight; }
+  .set-done:checked::after { border-color: HighlightText; }
   .menu { border: 1px solid CanvasText; }
   .menu .active { outline: 2px solid Highlight; outline-offset: -2px; }
 }

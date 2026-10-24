@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="/gym/workouts">{% include "_back.html" %}{{ lang.t("Workout history") }}</a>
+{% include "_flash.html" %}
+<header class="page-head">
+  <h1>{{ title }}</h1>
+  <p class="subtitle">{{ subtitle }}</p>
+</header>
+
+<dl class="workout-stats">
+  {% for (label, value) in stats %}
+  <div><dt>{{ label }}</dt><dd>{{ value }}</dd></div>
+  {% endfor %}
+</dl>
+
+{% for e in exercises %}
+<section class="section" aria-labelledby="done-{{ loop.index }}">
+  <div class="section-head"><h2 id="done-{{ loop.index }}">{{ e.name }}</h2></div>
+  <ol class="list">
+    {% for s in e.sets %}
+    <li class="row"><span class="step-number" aria-hidden="true">{{ loop.index }}</span><span class="row-main">{{ s }}</span></li>
+    {% endfor %}
+  </ol>
+</section>
+{% endfor %}
+{% if exercises.is_empty() %}
+<div class="list section"><p class="list-empty">{{ lang.t("No exercises in this workout.") }}</p></div>
+{% endif %}
+
+{% if !note.is_empty() %}
+<section class="card" aria-labelledby="note-heading">
+  <h2 id="note-heading">{{ lang.t("Note") }}</h2>
+  <p>{{ note }}</p>
+</section>
+{% endif %}
+
+<ul class="actions stacked">
+  <li><a class="button" href="/gym/workouts/{{ id }}/edit">{{ lang.t("Edit workout") }}</a></li>
+</ul>
+<form method="post" action="/gym/workouts/{{ id }}/delete" data-confirm="{{ lang.t("Delete this workout?") }}">
+  <button type="submit" class="danger block">{{ lang.t("Delete workout") }}</button>
+</form>
+{% endblock %}

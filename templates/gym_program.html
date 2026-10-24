@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="/gym">{% include "_back.html" %}{{ lang.t("Back to gym") }}</a>
+{% include "_flash.html" %}
+<header class="page-head">
+  <h1>{{ title }}</h1>
+  <p class="subtitle">{{ schedule_label }}{% if program.active %} · {{ lang.t("Current program") }}{% endif %}</p>
+</header>
+{% include "_errors.html" %}
+
+{% if !program.active %}
+<form method="post" action="/gym/programs/{{ program.id }}/activate" class="activate-form">
+  <button type="submit" class="primary block">{{ lang.t("Make this my current program") }}</button>
+</form>
+{% endif %}
+
+<section class="section" aria-labelledby="routines-heading">
+  <div class="section-head"><h2 id="routines-heading">{{ lang.t("Routines") }}</h2></div>
+  {% if routines.is_empty() %}
+  <div class="list"><p class="list-empty">{{ lang.t("No routines yet. Add one below, such as Push, Pull or Legs.") }}</p></div>
+  {% else %}
+  <ol class="list reorder-list">
+  {% for r in routines %}
+    <li id="routine-{{ r.id }}">
+      <div class="row reorder-row">
+        {% if !weekly %}<span class="step-number" aria-hidden="true">{{ loop.index }}</span>{% endif %}
+        <a class="row-main row-link" href="{{ r.url }}"><span class="row-title">{{ r.name }}</span><span class="row-sub">{{ r.sub }}</span></a>
+        {% if routines.len() > 1 %}
+        <span class="reorder">
+          <form method="post" action="/gym/routines/{{ r.id }}/move"><input type="hidden" name="dir" value="up"><button type="submit" class="icon-button" aria-label="{{ lang.f1("Move {0} up", r.name) }}"{% if r.first %} disabled{% endif %}>{% include "_arrow_up.html" %}</button></form>
+          <form method="post" action="/gym/routines/{{ r.id }}/move"><input type="hidden" name="dir" value="down"><button type="submit" class="icon-button" aria-label="{{ lang.f1("Move {0} down", r.name) }}"{% if r.last %} disabled{% endif %}>{% include "_arrow_down.html" %}</button></form>
+        </span>
+        {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  </ol>
+  {% if !weekly %}<p class="hint">{{ lang.t("The routines follow each other in this order, then start again from the first.") }}</p>{% endif %}
+  {% endif %}
+</section>
+
+{% if can_add %}
+<section class="section" aria-labelledby="add-routine-heading">
+  <div class="section-head"><h2 id="add-routine-heading">{{ lang.t("Add a routine") }}</h2></div>
+  <form method="post" action="/gym/programs/{{ program.id }}/routines">
+    {% include "_gym_routine_fields.html" %}
+    <button type="submit" class="primary block">{{ lang.t("Add routine") }}</button>
+  </form>
+</section>
+{% endif %}
+
+<ul class="actions stacked">
+  <li><a class="button" href="/gym/programs/{{ program.id }}/edit">{{ lang.t("Rename or change schedule") }}</a></li>
+</ul>
+<form method="post" action="/gym/programs/{{ program.id }}/delete" data-confirm="{{ lang.t("Delete this program?") }}" data-confirm-detail="{{ lang.t("Its routines and their exercises are deleted with it.") }}">
+  <button type="submit" class="danger block">{{ lang.t("Delete program") }}</button>
+</form>
+{% endblock %}

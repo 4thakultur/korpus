@@ -2,7 +2,8 @@
 
 A small, fast, self-hostable calorie and macronutrient tracker. Find a food,
 check its nutrition, log what you ate and see your day add up. You can also
-track your weight and set a calorie target if you want one.
+track your weight, set a calorie target and plan your gym programs if you
+want to.
 
 - **Private.** Your diary, weight and profile stay in one SQLite file on your server, behind a login with optional two-factor authentication. There is no analytics, tracking or AI.
 - **Works offline from providers.** Products are looked up in [Open Food Facts](https://world.openfoodfacts.org) when it's enabled. Your own foods, your diary and everything else work when it is down or turned off.
@@ -540,6 +541,48 @@ recorded before the list existed get no estimate until you edit them and
 choose a sport.
 Activity data is included in the JSON export and the database backup.
 
+## Gym
+
+The Gym tab holds your training programs. A program is made of routines
+(such as Push, Pull and Legs), and each routine lists its exercises with the
+number of sets, the reps (a number such as 8 or a range such as 8-12), an
+optional weight and rest time, and a note. Exercises held for a time, such as
+a plank, take a time per set instead of reps. Exercises can be reordered.
+
+- **Schedule.** A program either puts each routine on days of the week, or is
+  a *rotation*: the routines follow each other in order (A, B, C, A, …)
+  whatever the day. The Gym page shows the current program's week, with
+  today marked, or its order.
+- **Templates.** Push/Pull/Legs, Upper/Lower, Full body and 5×5 load as
+  ordinary programs, named in the interface language, to rename and adapt.
+- **Exercises.** About 130 common free-weight, cable, machine and body-weight
+  exercises are built in, with names written for Korpus in English, French and
+  Spanish using the terms gyms use in each language. Search matches the names
+  in all three languages, so "bench press" also finds "Développé couché". An
+  exercise that is missing can be added with its muscle group and equipment;
+  it cannot be deleted while a routine uses it.
+- **Units.** Weights are stored in kilograms and shown in the unit system of
+  your profile.
+
+- **Workouts.** Start a workout from today's routine (or the next one of a
+  rotation) on the Gym page, from any routine, or empty. Each set starts with
+  the numbers you did last time, else the plan, and shows last time's numbers
+  beside it. Tick a set when it is done; ticking starts the exercise's rest
+  timer. Values are saved as you type, so you can leave the page and come
+  back. Sets left unticked are dropped when you finish. When every planned set
+  reached the top of its rep range last time, the workout suggests adding a
+  little weight; nothing is changed for you. One workout can be in progress at
+  a time.
+- **History.** Finished workouts list their sets, volume (weight × reps) and
+  duration, and can be corrected or deleted later. The routine's plan is
+  copied into each workout, so editing or deleting a routine never changes
+  past workouts.
+
+Gym programs and workouts are included in the JSON export and the database
+backup. The idea and the four templates
+follow [openGym](https://github.com/DuarteSantos8/openGym); no code, exercise
+text, translations or media were copied from it.
+
 ## Development
 
 ```sh
@@ -567,6 +610,7 @@ Code layout (`src/`):
 | `diary` | Meals, entries with nutrition snapshots, daily totals |
 | `weight` | Weight history (canonical kg) |
 | `goals` | Mifflin–St Jeor estimate, macronutrient split, safety rules, goal settings |
+| `gym` | Programs, routines and their exercises; the built-in exercise list (`gym::exercises`), templates (`gym::starter`) and logged workouts (`gym::workouts`) |
 | `units` | Metric/imperial conversion, calendar dates per time zone, input parsing |
 | `backup` | JSON/CSV export, JSON import, SQLite snapshots |
 | `i18n` | Interface languages, `Accept-Language` negotiation, French and Spanish catalog |

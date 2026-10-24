@@ -5,6 +5,8 @@ mod auth;
 mod diary;
 mod foods;
 mod goals;
+mod gym;
+mod gym_workouts;
 mod search;
 mod settings;
 mod theme;
@@ -109,6 +111,51 @@ pub fn router(state: AppState) -> Router {
         .route("/activity/{id}", post(activity::update))
         .route("/activity/{id}/skip", post(activity::skip))
         .route("/activity/{id}/delete", post(activity::delete))
+        .route("/gym", get(gym::page))
+        .route("/gym/programs", post(gym::create_program))
+        .route("/gym/programs/new", get(gym::new_program_form))
+        .route(
+            "/gym/programs/{id}",
+            get(gym::program_detail).post(gym::update_program),
+        )
+        .route("/gym/programs/{id}/edit", get(gym::edit_program_form))
+        .route("/gym/programs/{id}/activate", post(gym::activate_program))
+        .route("/gym/programs/{id}/delete", post(gym::delete_program))
+        .route("/gym/programs/{id}/routines", post(gym::create_routine))
+        .route(
+            "/gym/routines/{id}",
+            get(gym::routine_detail).post(gym::update_routine),
+        )
+        .route("/gym/routines/{id}/edit", get(gym::edit_routine_form))
+        .route("/gym/routines/{id}/delete", post(gym::delete_routine))
+        .route("/gym/routines/{id}/move", post(gym::move_routine))
+        .route("/gym/routines/{id}/items", post(gym::create_item))
+        .route("/gym/routines/{id}/items/new", get(gym::new_item_form))
+        .route("/gym/items/{id}", get(gym::edit_item_form).post(gym::update_item))
+        .route("/gym/items/{id}/delete", post(gym::delete_item))
+        .route("/gym/items/{id}/move", post(gym::move_item))
+        .route(
+            "/gym/exercises",
+            get(gym::exercise_list).post(gym::create_exercise),
+        )
+        .route("/gym/exercises/new", get(gym::new_exercise_form))
+        .route("/gym/exercises/{id}", post(gym::update_exercise))
+        .route("/gym/exercises/{id}/edit", get(gym::edit_exercise_form))
+        .route("/gym/exercises/{id}/delete", post(gym::delete_exercise))
+        .route(
+            "/gym/workouts",
+            get(gym_workouts::history).post(gym_workouts::start),
+        )
+        .route(
+            "/gym/workouts/{id}",
+            get(gym_workouts::detail).post(gym_workouts::save),
+        )
+        .route("/gym/workouts/{id}/edit", get(gym_workouts::edit_form))
+        .route("/gym/workouts/{id}/delete", post(gym_workouts::delete))
+        .route(
+            "/gym/workouts/{id}/exercises",
+            post(gym_workouts::add_exercise),
+        )
         .route("/weight", get(weight::page).post(weight::create))
         .route("/weight/{id}/edit", get(weight::edit_form))
         .route("/weight/{id}", post(weight::update))
@@ -434,6 +481,24 @@ pub fn flash_message(key: Option<&str>, lang: Lang) -> Option<&'static str> {
         "activity_saved" => lang.t("Activity updated."),
         "activity_skipped" => lang.t("Activity skipped on this day."),
         "activity_deleted" => lang.t("Activity deleted."),
+        "program_created" => lang.t("Program created."),
+        "program_saved" => lang.t("Program updated."),
+        "program_activated" => lang.t("This is now your current program."),
+        "program_deleted" => lang.t("Program deleted."),
+        "routine_created" => lang.t("Routine created. Add its exercises."),
+        "routine_saved" => lang.t("Routine updated."),
+        "routine_deleted" => lang.t("Routine deleted."),
+        "exercise_added" => lang.t("Exercise added to the routine."),
+        "exercise_saved" => lang.t("Exercise updated."),
+        "exercise_removed" => lang.t("Exercise removed from the routine."),
+        "exercise_created" => lang.t("Exercise created."),
+        "exercise_updated" => lang.t("Exercise saved."),
+        "exercise_deleted" => lang.t("Exercise deleted."),
+        "workout_open" => lang.t("A workout is already in progress. Finish or discard it first."),
+        "workout_saved" => lang.t("Workout saved."),
+        "workout_finished" => lang.t("Workout finished."),
+        "workout_discarded" => lang.t("Workout discarded."),
+        "workout_deleted" => lang.t("Workout deleted."),
         "weight_saved" => lang.t("Weight recorded."),
         "weight_replaced" => lang.t("Weight for that date updated."),
         "weight_deleted" => lang.t("Weight entry deleted."),

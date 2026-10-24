@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="{{ back_url }}">{% include "_back.html" %}{% if item_id.is_some() %}{{ lang.t("Back to routine") }}{% else %}{{ lang.t("Back to exercises") }}{% endif %}</a>
+<header class="page-head">
+  <h1>{{ exercise }}</h1>
+  {% if !exercise_sub.is_empty() %}<p class="subtitle">{{ exercise_sub }}</p>{% endif %}
+</header>
+{% include "_errors.html" %}
+<form method="post" action="{{ action }}">
+  <div class="group">
+    <div class="form-row">
+      <label for="sets">{{ lang.t("Sets") }}</label>
+      <div class="control amount-input"><input type="text" id="sets" name="sets" value="{{ form.sets }}" inputmode="numeric" required autocomplete="off" {% if errors.has("sets") %}aria-invalid="true" aria-describedby="sets-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("sets") %}<p class="field-error" id="sets-error">{{ e }}</p>{% endif %}
+    </div>
+    {% if timed %}
+    <div class="form-row">
+      <label for="duration">{{ lang.t("Time per set") }}</label>
+      <div class="control amount-input"><input type="text" id="duration" name="duration" value="{{ form.duration }}" inputmode="numeric" required autocomplete="off" aria-describedby="time-hint{% if errors.has("duration") %} duration-error{% endif %}" {% if errors.has("duration") %}aria-invalid="true"{% endif %}></div>
+      {% if let Some(e) = errors.get("duration") %}<p class="field-error" id="duration-error">{{ e }}</p>{% endif %}
+    </div>
+    {% else %}
+    <div class="form-row">
+      <label for="reps">{{ lang.t("Reps") }}</label>
+      <div class="control amount-input"><input type="text" id="reps" name="reps" value="{{ form.reps }}" inputmode="text" required autocomplete="off" aria-describedby="reps-hint{% if errors.has("reps") %} reps-error{% endif %}" {% if errors.has("reps") %}aria-invalid="true"{% endif %}></div>
+      {% if let Some(e) = errors.get("reps") %}<p class="field-error" id="reps-error">{{ e }}</p>{% endif %}
+    </div>
+    {% endif %}
+    <div class="form-row">
+      <label for="weight">{% if bodyweight %}{{ lang.t("Added weight") }}{% else %}{{ lang.t("Weight") }}{% endif %} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <div class="control amount-input"><input type="text" id="weight" name="weight" value="{{ form.weight }}" inputmode="decimal" autocomplete="off" {% if errors.has("weight") %}aria-invalid="true" aria-describedby="weight-error"{% endif %}><span class="unit" aria-hidden="true">{{ unit }}</span></div>
+      {% if let Some(e) = errors.get("weight") %}<p class="field-error" id="weight-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label for="rest">{{ lang.t("Rest between sets") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <div class="control amount-input"><input type="text" id="rest" name="rest" value="{{ form.rest }}" inputmode="numeric" autocomplete="off" aria-describedby="time-hint{% if errors.has("rest") %} rest-error{% endif %}" {% if errors.has("rest") %}aria-invalid="true"{% endif %}></div>
+      {% if let Some(e) = errors.get("rest") %}<p class="field-error" id="rest-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <div class="control"><input type="text" id="note" name="note" value="{{ form.note }}" maxlength="200" autocomplete="off" placeholder="{{ lang.t("e.g. seat height 4") }}" {% if errors.has("note") %}aria-invalid="true" aria-describedby="note-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+    </div>
+  </div>
+  <div class="group-foot">
+    {% if !timed %}<p id="reps-hint">{{ lang.t("A number such as 8, or a range such as 8-12: add reps until you reach the top, then add weight.") }}</p>{% endif %}
+    <p id="time-hint">{{ lang.t("Times in seconds, or minutes and seconds such as 1:30.") }}</p>
+    {% if bodyweight %}<p>{{ lang.t("Leave the weight empty when you use only your body weight.") }}</p>{% endif %}
+  </div>
+  <ul class="actions stacked">
+    <li><button type="submit" class="primary">{% if item_id.is_some() %}{{ lang.t("Save") }}{% else %}{{ lang.t("Add to routine") }}{% endif %}</button></li>
+    <li><a class="button" href="{{ back_url }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+{% if let Some(iid) = item_id %}
+<form method="post" action="/gym/items/{{ iid }}/delete" data-confirm="{{ lang.t("Remove this exercise from the routine?") }}" data-confirm-action="{{ lang.t("Remove") }}">
+  <button type="submit" class="danger block">{{ lang.t("Remove from routine") }}</button>
+</form>
+{% endif %}
+{% endblock %}

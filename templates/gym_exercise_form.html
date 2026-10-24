@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="{{ back_url }}">{% include "_back.html" %}{{ lang.t("Back to exercises") }}</a>
+<header class="page-head"><h1>{{ title }}</h1></header>
+{% include "_errors.html" %}
+<form method="post" action="{% if let Some(id) = id %}/gym/exercises/{{ id }}{% else %}/gym/exercises{% endif %}">
+  {% if let Some((field, value)) = pick %}<input type="hidden" name="{{ field }}" value="{{ value }}">{% endif %}
+  <div class="group">
+    <div class="form-row">
+      <label for="name">{{ lang.t("Name") }}</label>
+      <div class="control"><input type="text" id="name" name="name" value="{{ name }}" maxlength="80" required autocomplete="off" {% if errors.has("name") %}aria-invalid="true" aria-describedby="name-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("name") %}<p class="field-error" id="name-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label for="muscle">{{ lang.t("Muscle group") }}</label>
+      <div class="control"><select id="muscle" name="muscle" required {% if errors.has("muscle") %}aria-invalid="true" aria-describedby="muscle-error"{% endif %}>
+        {% for o in muscles %}<option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+      {% if let Some(e) = errors.get("muscle") %}<p class="field-error" id="muscle-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label for="equipment">{{ lang.t("Equipment") }}</label>
+      <div class="control"><select id="equipment" name="equipment" required {% if errors.has("equipment") %}aria-invalid="true" aria-describedby="equipment-error"{% endif %}>
+        {% for o in equipment %}<option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+      </select></div>
+      {% if let Some(e) = errors.get("equipment") %}<p class="field-error" id="equipment-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label class="switch-row"><span class="switch-text">{{ lang.t("Sets are held for a time") }}</span><input type="checkbox" class="switch" id="timed" name="timed" value="on" aria-describedby="timed-hint"{% if timed %} checked{% endif %}{% if usage > 0 %} disabled{% endif %}></label>
+      {% if usage > 0 && timed %}<input type="hidden" name="timed" value="on">{% endif %}
+    </div>
+  </div>
+  <div class="group-foot">
+    <p id="timed-hint">{% if usage > 0 %}{{ lang.t("Used in a routine: whether sets are timed can no longer change.") }}{% else %}{{ lang.t("For exercises such as a plank: each set is a time instead of a number of reps.") }}{% endif %}</p>
+  </div>
+  <ul class="actions stacked">
+    <li><button type="submit" class="primary">{% if id.is_some() %}{{ lang.t("Save") }}{% else %}{{ lang.t("Create exercise") }}{% endif %}</button></li>
+    <li><a class="button" href="{{ back_url }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+{% if let Some(id) = id %}
+{% if usage > 0 %}
+<p class="note">{{ lang.t("This exercise is used in a routine. Remove it from your routines first.") }}</p>
+{% else %}
+<form method="post" action="/gym/exercises/{{ id }}/delete" data-confirm="{{ lang.t("Delete this exercise?") }}">
+  <button type="submit" class="danger block">{{ lang.t("Delete exercise") }}</button>
+</form>
+{% endif %}
+{% endif %}
+{% endblock %}

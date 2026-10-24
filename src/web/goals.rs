@@ -407,7 +407,7 @@ pub async fn page(
     let page = GoalsPage {
         lang,
         title: lang.t("Goals").into(),
-        nav: "goals",
+        nav: "settings",
         errors: FieldErrors::default(),
         message: flash_message(q.msg.as_deref(), lang),
         current_target: g.daily_kcal_target.map(fmt_kcal),
@@ -575,7 +575,7 @@ pub async fn save(
     let page = GoalsPage {
         lang,
         title: lang.t("Goals").into(),
-        nav: "goals",
+        nav: "settings",
         message: errors.is_empty().then_some(lang.t("Goal settings saved.")),
         errors,
         current_target: g.daily_kcal_target.map(fmt_kcal),

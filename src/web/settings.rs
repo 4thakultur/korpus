@@ -505,6 +505,8 @@ pub async fn import(State(state): State<AppState>, multipart: Multipart) -> AppR
                         foods = summary.foods,
                         diary_entries = summary.diary_entries,
                         weight_entries = summary.weight_entries,
+                        gym_programs = summary.gym_programs,
+                        gym_workouts = summary.gym_workouts,
                         "import complete"
                     );
                     Ok(())

@@ -695,6 +695,42 @@
   var PILL_KEY = "korpus-tab-from";
   var PILL_MS = 380;
 
+  // The exercise list filters as you type, like the server does: every
+  // typed word must start a word of one of the exercise's names (in any
+  // language). The muscle chips keep what was typed.
+  function setupExerciseFilter(form) {
+    var input = form.querySelector("input[name=q]");
+    var rows = document.querySelectorAll("#exercise-list > li");
+    var none = document.getElementById("exercise-none");
+    var chips = document.querySelectorAll(".chips a");
+    if (!input) return;
+    function fold(s) {
+      return foldText(s).replace(/œ/g, "oe").replace(/æ/g, "ae").replace(/ß/g, "ss")
+        .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+    }
+    function apply() {
+      var words = fold(input.value).split(" ").filter(Boolean);
+      var shown = 0;
+      rows.forEach(function (li) {
+        var text = (li.getAttribute("data-search") || "").split(" ");
+        var ok = words.every(function (w) {
+          return text.some(function (t) { return t.indexOf(w) === 0 || (w.length > 3 && t.indexOf(w) >= 0); });
+        });
+        li.hidden = !ok;
+        if (ok) shown++;
+      });
+      if (none) none.hidden = shown > 0;
+      chips.forEach(function (a) {
+        var url = new URL(a.href, location.href);
+        if (input.value.trim()) url.searchParams.set("q", input.value.trim());
+        else url.searchParams.delete("q");
+        a.href = url.pathname + url.search;
+      });
+    }
+    input.addEventListener("input", apply);
+    form.addEventListener("submit", function (e) { e.preventDefault(); apply(); });
+  }
+
   function setupTabPill(bar) {
     var list = bar.querySelector("ul");
     var current = bar.querySelector('a[aria-current="page"]');
@@ -848,6 +884,109 @@
     });
   }
 
+  // A workout in progress: values save as they are entered, so nothing is
+  // lost when the page is left, and ticking a set starts the rest timer of
+  // its exercise. The form's buttons still post it normally.
+  function setupWorkout(form) {
+    var timer = null;
+    var seq = 0;
+    var status = form.querySelector("[data-autosave-status]");
+
+    function showError(text) {
+      if (!status) return;
+      var p = document.createElement("p");
+      p.className = "warning";
+      p.textContent = text;
+      status.replaceChildren(p);
+    }
+
+    function save(beacon) {
+      clearTimeout(timer);
+      timer = null;
+      var body = new URLSearchParams(new FormData(form));
+      body.set("action", "save");
+      var mine = ++seq;
+      // The buttons are named "action", which hides form.action.
+      fetch(form.getAttribute("action"), {
+        method: "POST",
+        body: body,
+        credentials: "same-origin",
+        keepalive: !!beacon,
+        headers: { "X-Korpus-Autosave": "1" }
+      })
+        .then(checkLogin)
+        .then(function (r) {
+          if (mine !== seq) return;
+          if (r.status === 422) showError(form.getAttribute("data-invalid"));
+          else if (!r.ok) throw new Error("HTTP " + r.status);
+          else if (status) status.replaceChildren();
+        })
+        .catch(function () {
+          if (mine === seq) showError(t("save-error", "Could not save. Check your connection and try again."));
+        });
+    }
+
+    form.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(save, 800);
+    });
+    form.addEventListener("change", function (e) {
+      if (!e.target.classList.contains("set-done")) return;
+      var row = e.target.closest("tr");
+      if (row) row.classList.toggle("is-done", e.target.checked);
+      save();
+      var section = e.target.closest("[data-rest]");
+      var rest = section ? parseInt(section.getAttribute("data-rest"), 10) : 0;
+      if (e.target.checked && rest > 0) startRest(rest);
+    });
+    // A button posts the whole form, which saves it too.
+    form.addEventListener("submit", function () { clearTimeout(timer); timer = null; seq++; });
+    // Leaving with a change not yet saved (switching tab, locking the phone).
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden" && timer) save(true);
+    });
+
+    var bar = document.querySelector("[data-rest-timer]");
+    var left = bar && bar.querySelector("[data-rest-left]");
+    var announce = document.querySelector("[data-rest-announce]");
+    var end = 0;
+    var tick = null;
+    function fmt(s) { return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); }
+    function stopRest() {
+      clearInterval(tick);
+      tick = null;
+      if (bar) bar.hidden = true;
+    }
+    function update() {
+      var s = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+      left.textContent = fmt(s);
+      if (s > 0) return;
+      clearInterval(tick);
+      tick = null;
+      left.textContent = bar.getAttribute("data-done");
+      if (announce) announce.textContent = bar.getAttribute("data-done");
+      if (navigator.vibrate) navigator.vibrate(200);
+      setTimeout(function () { if (!tick) bar.hidden = true; }, 4000);
+    }
+    function startRest(seconds) {
+      if (!bar || !left) return;
+      end = Date.now() + seconds * 1000;
+      if (announce) announce.textContent = "";
+      bar.hidden = false;
+      clearInterval(tick);
+      tick = setInterval(update, 250);
+      update();
+    }
+    if (bar) {
+      bar.querySelector("[data-rest-skip]").addEventListener("click", stopRest);
+      bar.querySelector("[data-rest-add]").addEventListener("click", function () {
+        end = Math.max(end, Date.now()) + 15000;
+        if (!tick) tick = setInterval(update, 250);
+        update();
+      });
+    }
+  }
+
   // Destructive form posts are confirmed in an alert styled like iOS:
   // data-confirm is the title, data-confirm-detail an optional message and
   // data-confirm-action the destructive button's label.
@@ -896,6 +1035,67 @@
     d.querySelector(".alert-cancel").focus();
   }
 
+  // Adding a food opened from Foods asks for the meal in an action sheet
+  // styled like iOS, built from the meal menu's options. Without the script
+  // (or <dialog>) the menu stays on the page, preset from the time of day.
+  function setupMealSheet(form) {
+    var select = form.querySelector('select[name="meal"]');
+    if (!select || !window.HTMLDialogElement) return;
+    var row = select.closest(".form-row");
+    if (row) row.hidden = true;
+
+    var d = document.createElement("dialog");
+    d.className = "sheet";
+    d.setAttribute("aria-labelledby", "meal-sheet-title");
+    var group = document.createElement("div");
+    group.className = "sheet-group";
+    var title = document.createElement("h2");
+    title.id = "meal-sheet-title";
+    title.className = "sheet-title";
+    title.textContent = form.getAttribute("data-ask-meal");
+    group.appendChild(title);
+    Array.prototype.forEach.call(select.options, function (o) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.value = o.value;
+      b.textContent = o.textContent;
+      b.addEventListener("click", function () {
+        select.value = o.value;
+        d.close();
+        // submit() skips the submit event, so the sheet does not open again.
+        form.submit();
+      });
+      group.appendChild(b);
+    });
+    var cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "sheet-cancel";
+    cancel.textContent = t("cancel", "Cancel");
+    cancel.addEventListener("click", function () { d.close(); });
+    d.appendChild(group);
+    d.appendChild(cancel);
+    // A tap outside the sheet dismisses it, as on iOS.
+    d.addEventListener("click", function (e) {
+      var r = d.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close();
+    });
+    d.addEventListener("close", function () {
+      if (d.opener && d.opener.isConnected) d.opener.focus();
+      d.opener = null;
+    });
+    document.body.appendChild(d);
+
+    // Runs after the browser has checked the amount.
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      d.opener = document.activeElement;
+      d.showModal();
+      // The meal suggested by the time of day has focus, so Enter picks it.
+      var suggested = group.querySelector('button[value="' + select.value + '"]');
+      (suggested || group.querySelector("button")).focus();
+    });
+  }
+
   onReady(function () {
     var tabBar = document.querySelector(".tab-bar");
     if (tabBar) setupTabPill(tabBar);
@@ -910,6 +1110,7 @@
     });
 
     document.querySelectorAll("form select").forEach(setupMenu);
+    document.querySelectorAll("form[data-ask-meal]").forEach(setupMealSheet);
     document.querySelectorAll('input[type="file"][id]').forEach(setupFilePicker);
     // Error summary links point at the field; a select's menu button
     // stands in for it.
@@ -922,6 +1123,7 @@
       button.focus();
     });
     document.querySelectorAll("form[data-autosave]").forEach(function (f) { setupAutosave(f); });
+    document.querySelectorAll("form[data-workout]").forEach(setupWorkout);
 
     // Preview the appearance as soon as it is picked; saving stores it.
     document.querySelectorAll("[data-theme-picker]").forEach(function (group) {
@@ -981,6 +1183,7 @@
 
     document.querySelectorAll("form[data-live-search]").forEach(setupLiveSearch);
     document.querySelectorAll("form[data-nutrients]").forEach(setupNutrientPreview);
+    document.querySelectorAll("form[data-exercise-filter]").forEach(setupExerciseFilter);
 
     var summary = document.querySelector("[data-focus]");
     if (summary) summary.focus();

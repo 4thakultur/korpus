@@ -9,6 +9,9 @@ use crate::diary::{Entry, Meal, check_amount};
 use crate::error::{AppError, AppResult};
 use crate::foods::{Food, search_text};
 use crate::goals::{Activity, Goal, GoalSettings, MIN_CUSTOM_KCAL, Sex};
+use crate::gym::exercises::{Equipment, Muscle};
+use crate::gym::workouts::{Workout, WorkoutExercise, WorkoutSet};
+use crate::gym::{self, CustomExercise, Program, Routine, RoutineExercise, Schedule};
 use crate::i18n::Lang;
 use crate::nutrition::{Basis, Nutrient, check_value};
 use crate::profile::Profile;
@@ -37,6 +40,22 @@ pub struct Export {
     pub activities: Vec<activity::Activity>,
     #[serde(default)]
     pub activity_skips: Vec<ActivitySkip>,
+    /// Gym programs; absent in exports made before they existed.
+    #[serde(default)]
+    pub gym_exercises: Vec<CustomExercise>,
+    #[serde(default)]
+    pub gym_programs: Vec<Program>,
+    #[serde(default)]
+    pub gym_routines: Vec<Routine>,
+    #[serde(default)]
+    pub gym_routine_exercises: Vec<RoutineExercise>,
+    /// Logged workouts; absent in exports made before they existed.
+    #[serde(default)]
+    pub gym_workouts: Vec<Workout>,
+    #[serde(default)]
+    pub gym_workout_exercises: Vec<WorkoutExercise>,
+    #[serde(default)]
+    pub gym_workout_sets: Vec<WorkoutSet>,
 }
 
 pub async fn export(db: &SqlitePool) -> AppResult<Export> {
@@ -70,6 +89,48 @@ pub async fn export(db: &SqlitePool) -> AppResult<Export> {
     )
     .fetch_all(db)
     .await?;
+    let gym_exercises = sqlx::query_as::<_, CustomExercise>(
+        "SELECT id, name, muscle, equipment, timed FROM gym_exercises ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let gym_programs = sqlx::query_as::<_, Program>(
+        "SELECT id, name, schedule, active FROM gym_programs ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let gym_routines = sqlx::query_as::<_, Routine>(
+        "SELECT id, program_id, name, position, weekdays FROM gym_routines ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let gym_routine_exercises = sqlx::query_as::<_, RoutineExercise>(
+        "SELECT id, routine_id, position, exercise_key, custom_exercise_id, sets, reps_min,
+                reps_max, duration_s, weight_kg, rest_s, note
+         FROM gym_routine_exercises ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let gym_workouts = sqlx::query_as::<_, Workout>(
+        "SELECT id, workout_date, name, routine_id, started_at, finished_at, note
+         FROM gym_workouts ORDER BY workout_date, id",
+    )
+    .fetch_all(db)
+    .await?;
+    let gym_workout_exercises = sqlx::query_as::<_, WorkoutExercise>(
+        "SELECT id, workout_id, position, exercise_key, custom_exercise_id, exercise_name, timed,
+                target_sets, target_reps_min, target_reps_max, target_duration_s,
+                target_weight_kg, rest_s
+         FROM gym_workout_exercises ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let gym_workout_sets = sqlx::query_as::<_, WorkoutSet>(
+        "SELECT id, workout_exercise_id, position, reps, duration_s, weight_kg, done
+         FROM gym_workout_sets ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
     Ok(Export {
         format: EXPORT_FORMAT.into(),
         version: EXPORT_VERSION,
@@ -82,6 +143,13 @@ pub async fn export(db: &SqlitePool) -> AppResult<Export> {
         daily_steps,
         activities,
         activity_skips,
+        gym_exercises,
+        gym_programs,
+        gym_routines,
+        gym_routine_exercises,
+        gym_workouts,
+        gym_workout_exercises,
+        gym_workout_sets,
     })
 }
 
@@ -223,6 +291,8 @@ pub struct ImportSummary {
     pub diary_entries: usize,
     pub weight_entries: usize,
     pub activities: usize,
+    pub gym_programs: usize,
+    pub gym_workouts: usize,
 }
 
 fn invalid(lang: Lang, what: impl std::fmt::Display) -> AppError {
@@ -415,6 +485,171 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
     if !valid_goals(&export.goals) {
         return Err(invalid(lang, lang.t("goal settings")));
     }
+    validate_gym(export, lang)
+}
+
+/// Gym data as the gym pages could have saved it.
+fn validate_gym(export: &Export, lang: Lang) -> AppResult<()> {
+    let bad_name = |n: &str| n.trim().is_empty() || n.chars().count() > gym::MAX_NAME_CHARS;
+    let too_many = |n: usize, max: i64| n > usize::try_from(max).unwrap_or(usize::MAX);
+    if too_many(export.gym_exercises.len(), gym::MAX_CUSTOM_EXERCISES)
+        || too_many(export.gym_programs.len(), gym::MAX_PROGRAMS)
+        || too_many(
+            export.gym_routines.len(),
+            gym::MAX_PROGRAMS * gym::MAX_ROUTINES,
+        )
+        || too_many(
+            export.gym_routine_exercises.len(),
+            gym::MAX_PROGRAMS * gym::MAX_ROUTINES * gym::MAX_ITEMS,
+        )
+    {
+        return Err(invalid(lang, lang.t("too many gym records")));
+    }
+    for c in &export.gym_exercises {
+        let ctx = || lang.f("exercise {0}", &[&c.id]);
+        if bad_name(&c.name)
+            || Muscle::parse(&c.muscle).is_none()
+            || Equipment::parse(&c.equipment).is_none()
+        {
+            return Err(invalid(lang, at(ctx(), lang.t("name"))));
+        }
+    }
+    if export.gym_programs.iter().filter(|p| p.active).count() > 1 {
+        return Err(invalid(lang, lang.t("more than one current program")));
+    }
+    for p in &export.gym_programs {
+        if bad_name(&p.name) || Schedule::parse(&p.schedule).is_none() {
+            return Err(invalid(
+                lang,
+                at(lang.f("program {0}", &[&p.id]), lang.t("name")),
+            ));
+        }
+    }
+    for r in &export.gym_routines {
+        let ctx = || lang.f("routine {0}", &[&r.id]);
+        if !export.gym_programs.iter().any(|p| p.id == r.program_id) {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown program"))));
+        }
+        if bad_name(&r.name) || Weekdays::from_bits(r.weekdays).is_none() {
+            return Err(invalid(lang, at(ctx(), lang.t("name"))));
+        }
+    }
+    for x in &export.gym_routine_exercises {
+        let ctx = || lang.f("routine exercise {0}", &[&x.id]);
+        if !export.gym_routines.iter().any(|r| r.id == x.routine_id) {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown routine"))));
+        }
+        let exercise_ok = match (&x.exercise_key, x.custom_exercise_id) {
+            (Some(key), None) => gym::exercises::find(key).is_some(),
+            (None, Some(id)) => export.gym_exercises.iter().any(|c| c.id == id),
+            _ => false,
+        };
+        if !exercise_ok {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown exercise"))));
+        }
+        let target_ok = match x.target() {
+            Some(gym::Target::Reps { min, max }) => {
+                (1..=gym::MAX_REPS).contains(&min)
+                    && max.is_none_or(|m| m > min && m <= gym::MAX_REPS)
+            }
+            Some(gym::Target::Duration(s)) => (1..=gym::MAX_DURATION_S).contains(&s),
+            None => false,
+        };
+        let plan_ok = target_ok
+            && (1..=gym::MAX_SETS).contains(&x.sets)
+            && x.weight_kg
+                .is_none_or(|w| (0.0..=gym::MAX_LOAD_KG).contains(&w))
+            && x.rest_s.is_none_or(|r| (0..=gym::MAX_REST_S).contains(&r))
+            && !too_long(x.note.as_deref(), gym::MAX_NOTE_CHARS);
+        if !plan_ok {
+            return Err(invalid(
+                lang,
+                at(ctx(), lang.t("sets, reps, weight or rest")),
+            ));
+        }
+    }
+    validate_workouts(export, lang)
+}
+
+/// Bounds a lifetime of workouts while refusing absurd files.
+const MAX_IMPORT_WORKOUTS: usize = 20_000;
+
+/// Logged workouts as the workout pages could have saved them.
+fn validate_workouts(export: &Export, lang: Lang) -> AppResult<()> {
+    use std::collections::HashMap;
+
+    let bad_name = |n: &str| n.trim().is_empty() || n.chars().count() > gym::MAX_NAME_CHARS;
+    let max_exercises = MAX_IMPORT_WORKOUTS * gym::workouts::MAX_WORKOUT_EXERCISES as usize;
+    if export.gym_workouts.len() > MAX_IMPORT_WORKOUTS
+        || export.gym_workout_exercises.len() > max_exercises
+        || export.gym_workout_sets.len() > max_exercises * gym::MAX_SETS as usize
+    {
+        return Err(invalid(lang, lang.t("too many gym records")));
+    }
+    if export.gym_workouts.iter().filter(|w| w.is_open()).count() > 1 {
+        return Err(invalid(lang, lang.t("more than one workout in progress")));
+    }
+    let workouts: HashMap<i64, &Workout> = export.gym_workouts.iter().map(|w| (w.id, w)).collect();
+    for w in &export.gym_workouts {
+        let ctx = || lang.f("workout {0}", &[&w.id]);
+        let ok = parse_date(&w.workout_date).is_some()
+            && !bad_name(&w.name)
+            && !w.started_at.trim().is_empty()
+            && w.routine_id
+                .is_none_or(|r| export.gym_routines.iter().any(|x| x.id == r))
+            && !too_long(w.note.as_deref(), gym::workouts::MAX_NOTE_CHARS);
+        if !ok {
+            return Err(invalid(lang, at(ctx(), lang.t("date, name or routine"))));
+        }
+    }
+    let mut exercises = HashMap::new();
+    for x in &export.gym_workout_exercises {
+        let ctx = || lang.f("workout exercise {0}", &[&x.id]);
+        if !workouts.contains_key(&x.workout_id) {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown workout"))));
+        }
+        let exercise_ok = match (&x.exercise_key, x.custom_exercise_id) {
+            (Some(key), None) => gym::exercises::find(key).is_some(),
+            (None, Some(id)) => export.gym_exercises.iter().any(|c| c.id == id),
+            // A deleted exercise of the user's, kept by name.
+            (None, None) => true,
+            (Some(_), Some(_)) => false,
+        };
+        if !exercise_ok || bad_name(&x.exercise_name) {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown exercise"))));
+        }
+        let in_range = |v: Option<i64>, max: i64| v.is_none_or(|v| (1..=max).contains(&v));
+        let plan_ok = in_range(x.target_sets, gym::MAX_SETS)
+            && in_range(x.target_reps_min, gym::MAX_REPS)
+            && in_range(x.target_reps_max, gym::MAX_REPS)
+            && in_range(x.target_duration_s, gym::MAX_DURATION_S)
+            && x.target_weight_kg
+                .is_none_or(|w| (0.0..=gym::MAX_LOAD_KG).contains(&w))
+            && x.rest_s.is_none_or(|r| (0..=gym::MAX_REST_S).contains(&r));
+        if !plan_ok {
+            return Err(invalid(
+                lang,
+                at(ctx(), lang.t("sets, reps, weight or rest")),
+            ));
+        }
+        exercises.insert(x.id, x.workout_id);
+    }
+    for s in &export.gym_workout_sets {
+        let ctx = || lang.f("workout set {0}", &[&s.id]);
+        if !exercises.contains_key(&s.workout_exercise_id) {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown workout exercise"))));
+        }
+        let ok = s
+            .reps
+            .is_none_or(|r| (0..=gym::workouts::MAX_SET_REPS).contains(&r))
+            && s.duration_s
+                .is_none_or(|d| (0..=gym::MAX_DURATION_S).contains(&d))
+            && s.weight_kg
+                .is_none_or(|w| (0.0..=gym::MAX_LOAD_KG).contains(&w));
+        if !ok {
+            return Err(invalid(lang, at(ctx(), lang.t("reps, time or weight"))));
+        }
+    }
     Ok(())
 }
 
@@ -428,13 +663,14 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     let existing: i64 = sqlx::query_scalar(
         "SELECT (SELECT COUNT(*) FROM foods) + (SELECT COUNT(*) FROM diary_entries)
               + (SELECT COUNT(*) FROM weight_entries) + (SELECT COUNT(*) FROM activities)
-              + (SELECT COUNT(*) FROM daily_steps)",
+              + (SELECT COUNT(*) FROM daily_steps) + (SELECT COUNT(*) FROM gym_programs)
+              + (SELECT COUNT(*) FROM gym_exercises) + (SELECT COUNT(*) FROM gym_workouts)",
     )
     .fetch_one(&mut *tx)
     .await?;
     if existing > 0 {
         return Err(AppError::BadRequest(
-            lang.t("Import is only possible into an empty installation. This one already contains foods, diary entries, weights or activity.")
+            lang.t("Import is only possible into an empty installation. This one already contains foods, diary entries, weights, activity or gym programs.")
                 .into(),
         ));
     }
@@ -637,12 +873,127 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
             .await?;
     }
 
+    // Ids are preserved so routines keep pointing at their program and
+    // exercises.
+    for c in &export.gym_exercises {
+        sqlx::query(
+            "INSERT INTO gym_exercises (id, name, muscle, equipment, timed) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(c.id)
+        .bind(&c.name)
+        .bind(&c.muscle)
+        .bind(&c.equipment)
+        .bind(c.timed)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for p in &export.gym_programs {
+        sqlx::query("INSERT INTO gym_programs (id, name, schedule, active) VALUES (?, ?, ?, ?)")
+            .bind(p.id)
+            .bind(&p.name)
+            .bind(&p.schedule)
+            .bind(p.active)
+            .execute(&mut *tx)
+            .await?;
+    }
+    for r in &export.gym_routines {
+        sqlx::query(
+            "INSERT INTO gym_routines (id, program_id, name, position, weekdays)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(r.id)
+        .bind(r.program_id)
+        .bind(&r.name)
+        .bind(r.position)
+        .bind(r.weekdays)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for x in &export.gym_routine_exercises {
+        sqlx::query(
+            "INSERT INTO gym_routine_exercises (id, routine_id, position, exercise_key,
+                 custom_exercise_id, sets, reps_min, reps_max, duration_s, weight_kg, rest_s, note)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(x.id)
+        .bind(x.routine_id)
+        .bind(x.position)
+        .bind(&x.exercise_key)
+        .bind(x.custom_exercise_id)
+        .bind(x.sets)
+        .bind(x.reps_min)
+        .bind(x.reps_max)
+        .bind(x.duration_s)
+        .bind(x.weight_kg)
+        .bind(x.rest_s)
+        .bind(&x.note)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for w in &export.gym_workouts {
+        sqlx::query(
+            "INSERT INTO gym_workouts (id, workout_date, name, routine_id, started_at, finished_at,
+                 note)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(w.id)
+        .bind(&w.workout_date)
+        .bind(&w.name)
+        .bind(w.routine_id)
+        .bind(&w.started_at)
+        .bind(&w.finished_at)
+        .bind(&w.note)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for x in &export.gym_workout_exercises {
+        sqlx::query(
+            "INSERT INTO gym_workout_exercises (id, workout_id, position, exercise_key,
+                 custom_exercise_id, exercise_name, timed, target_sets, target_reps_min,
+                 target_reps_max, target_duration_s, target_weight_kg, rest_s)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(x.id)
+        .bind(x.workout_id)
+        .bind(x.position)
+        .bind(&x.exercise_key)
+        .bind(x.custom_exercise_id)
+        .bind(&x.exercise_name)
+        .bind(x.timed)
+        .bind(x.target_sets)
+        .bind(x.target_reps_min)
+        .bind(x.target_reps_max)
+        .bind(x.target_duration_s)
+        .bind(x.target_weight_kg)
+        .bind(x.rest_s)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for st in &export.gym_workout_sets {
+        sqlx::query(
+            "INSERT INTO gym_workout_sets (id, workout_exercise_id, position, reps, duration_s,
+                 weight_kg, done)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(st.id)
+        .bind(st.workout_exercise_id)
+        .bind(st.position)
+        .bind(st.reps)
+        .bind(st.duration_s)
+        .bind(st.weight_kg)
+        .bind(st.done)
+        .execute(&mut *tx)
+        .await?;
+    }
+
     tx.commit().await?;
     Ok(ImportSummary {
         foods: export.foods.len(),
         diary_entries: export.diary_entries.len(),
         weight_entries: export.weight_entries.len(),
         activities: export.activities.len(),
+        gym_programs: export.gym_programs.len(),
+        gym_workouts: export.gym_workouts.len(),
     })
 }
 

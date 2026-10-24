@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="{{ back_url }}">{% include "_back.html" %}{% if id.is_some() %}{{ lang.t("Back to program") }}{% else %}{{ lang.t("Back to gym") }}{% endif %}</a>
+<header class="page-head"><h1>{{ title }}</h1></header>
+{% include "_errors.html" %}
+<form method="post" action="{% if let Some(id) = id %}/gym/programs/{{ id }}{% else %}/gym/programs{% endif %}">
+  <div class="group">
+    <div class="form-row">
+      <label for="name">{{ lang.t("Name") }}</label>
+      <div class="control"><input type="text" id="name" name="name" value="{{ name }}" maxlength="80" required autocomplete="off" placeholder="{{ lang.t("e.g. Strength") }}" {% if errors.has("name") %}aria-invalid="true" aria-describedby="name-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("name") %}<p class="field-error" id="name-error">{{ e }}</p>{% endif %}
+    </div>
+    <fieldset class="form-row stacked" id="schedule" aria-describedby="schedule-hint{% if errors.has("schedule") %} schedule-error{% endif %}">
+      <legend>{{ lang.t("Schedule") }}</legend>
+      <div class="segmented">
+        {% for s in schedules %}<label><input type="radio" name="schedule" value="{{ s.value }}"{% if s.checked %} checked{% endif %}><span>{{ s.label }}</span></label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("schedule") %}<p class="field-error" id="schedule-error">{{ e }}</p>{% endif %}
+    </fieldset>
+  </div>
+  <div class="group-foot" id="schedule-hint">
+    <p>{{ lang.t("Days of the week: each routine has its days, such as Push on Monday.") }}</p>
+    <p>{{ lang.t("Rotation: the routines follow each other in order, A, B, C, then A again, whatever the day you train.") }}</p>
+  </div>
+  <ul class="actions stacked">
+    <li><button type="submit" class="primary">{% if id.is_some() %}{{ lang.t("Save") }}{% else %}{{ lang.t("Create program") }}{% endif %}</button></li>
+    <li><a class="button" href="{{ back_url }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+
+{% if !starters.is_empty() %}
+<section class="section" aria-labelledby="starters-heading">
+  <div class="section-head"><h2 id="starters-heading">{{ lang.t("Or start from a template") }}</h2></div>
+  {% include "_gym_starters.html" %}
+</section>
+{% endif %}
+{% endblock %}

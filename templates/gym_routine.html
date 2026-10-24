@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="{{ program_url }}">{% include "_back.html" %}{{ program_name }}</a>
+{% include "_flash.html" %}
+<header class="page-head">
+  <h1>{{ title }}</h1>
+  <p class="subtitle">{{ subtitle }}</p>
+</header>
+
+{% if let Some(w) = open_workout %}
+<p class="note">{{ lang.t("A workout is in progress.") }} <a href="/gym/workouts/{{ w }}">{{ lang.t("Continue it") }}</a></p>
+{% else if !items.is_empty() %}
+<form method="post" action="/gym/workouts" class="activate-form">
+  <input type="hidden" name="routine" value="{{ id }}">
+  <button type="submit" class="primary block">{{ lang.t("Start workout") }}</button>
+</form>
+{% endif %}
+
+<section class="section" aria-labelledby="exercises-heading">
+  <div class="section-head"><h2 id="exercises-heading">{{ lang.t("Exercises") }}</h2></div>
+  <ol class="list reorder-list">
+  {% for i in items %}
+    <li id="item-{{ i.id }}">
+      <div class="row reorder-row">
+        <span class="step-number" aria-hidden="true">{{ loop.index }}</span>
+        <a class="row-main row-link" href="{{ i.url }}">
+          <span class="row-title">{{ i.name }}</span>
+          <span class="row-sub"><strong class="plan">{{ i.plan }}</strong>{% if !i.detail.is_empty() %} · {{ i.detail }}{% endif %}</span>
+          {% if !i.note.is_empty() %}<span class="row-sub"><span class="visually-hidden">{{ lang.t("Note") }}:</span> {{ i.note }}</span>{% endif %}
+        </a>
+        {% if items.len() > 1 %}
+        <span class="reorder">
+          <form method="post" action="/gym/items/{{ i.id }}/move"><input type="hidden" name="dir" value="up"><button type="submit" class="icon-button" aria-label="{{ lang.f1("Move {0} up", i.name) }}"{% if i.first %} disabled{% endif %}>{% include "_arrow_up.html" %}</button></form>
+          <form method="post" action="/gym/items/{{ i.id }}/move"><input type="hidden" name="dir" value="down"><button type="submit" class="icon-button" aria-label="{{ lang.f1("Move {0} down", i.name) }}"{% if i.last %} disabled{% endif %}>{% include "_arrow_down.html" %}</button></form>
+        </span>
+        {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+  {% if can_add %}
+    <li><a class="row add-row" href="/gym/exercises?routine={{ id }}">{% include "_plus.html" %}<span class="row-main">{{ lang.t("Add exercise") }}</span></a></li>
+  {% endif %}
+  </ol>
+  {% if items.is_empty() %}<p class="hint">{{ lang.t("Choose exercises from the list, then set their sets, reps, weight and rest.") }}</p>{% endif %}
+</section>
+
+<ul class="actions stacked">
+  <li><a class="button" href="/gym/routines/{{ id }}/edit">{{ lang.t("Rename or change days") }}</a></li>
+</ul>
+<form method="post" action="/gym/routines/{{ id }}/delete" data-confirm="{{ lang.t("Delete this routine?") }}" data-confirm-detail="{{ lang.t("Its exercises are removed from the program.") }}">
+  <button type="submit" class="danger block">{{ lang.t("Delete routine") }}</button>
+</form>
+{% endblock %}

@@ -1,7 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 {% include "_flash.html" %}
+{% if setup %}
 <header class="page-head"><h1>{{ lang.t("Goals") }}</h1></header>
+{% else %}
+<header class="page-head"><h1>{{ lang.t("Settings") }}</h1></header>
+{% let nav_tab = "goals" %}{% include "_settings_tabs.html" %}
+{% endif %}
 {% if setup %}
 <div class="note">
   <p>{{ lang.t("Optionally set a daily calorie target now. You can change or remove it any time.") }}</p>

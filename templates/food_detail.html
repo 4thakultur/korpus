@@ -34,7 +34,7 @@
 <section class="section" aria-labelledby="log-heading">
   <div class="section-head"><h2 id="log-heading">{{ lang.t("Add to diary") }}</h2></div>
   {% include "_errors.html" %}
-  <form method="post" action="/diary/entries" class="log-form"
+  <form method="post" action="/diary/entries" class="log-form"{% if ask_meal %} data-ask-meal="{{ lang.t("Add to which meal?") }}"{% endif %}
         data-nutrients data-kcal="{{ data_kcal }}" data-protein="{{ data_protein }}" data-carbs="{{ data_carbs }}" data-fat="{{ data_fat }}">
     <input type="hidden" name="food_id" value="{{ food.id }}">
     <div class="group">

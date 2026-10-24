@@ -999,6 +999,24 @@ async fn sport_once_or_every_week_with_skipped_days() {
 }
 
 #[tokio::test]
+async fn goals_live_under_settings() {
+    let a = app().await;
+    a.setup().await;
+
+    let goals = a.get("/goals").await.body;
+    let settings = a.get("/settings").await.body;
+    for page in [&goals, &settings] {
+        // One Settings entry in the tab bar, opening on Goals.
+        assert!(page.contains(r#"<li><a href="/goals" aria-current="page">"#));
+        assert!(!page.contains(r#"<li><a href="/settings""#));
+    }
+    assert!(goals.contains(r#"<a href="/goals" aria-current="page"><span>Goals</span>"#));
+    assert!(
+        settings.contains(r#"<a href="/settings" aria-current="page"><span>Preferences</span>"#)
+    );
+}
+
+#[tokio::test]
 async fn goals_estimate_custom_and_safety() {
     let a = app().await;
     a.setup().await;
@@ -1750,6 +1768,35 @@ async fn appearance_is_stored_per_device_in_a_cookie() {
 }
 
 #[tokio::test]
+async fn adding_from_foods_asks_for_the_meal() {
+    let a = app().await;
+    a.setup().await;
+    let id = a.create_oats().await;
+    let from_foods = a.get(&format!("/foods/{id}")).await;
+    assert!(
+        from_foods
+            .body
+            .contains("data-ask-meal=\"Add to which meal?\"")
+    );
+    // The meal menu stays as the fallback without JavaScript.
+    assert!(
+        from_foods
+            .body
+            .contains("<select id=\"meal\" name=\"meal\"")
+    );
+
+    let from_diary = a
+        .get(&format!("/foods/{id}?date=2026-05-01&meal=dinner"))
+        .await;
+    assert!(!from_diary.body.contains("data-ask-meal"));
+    assert!(
+        from_diary
+            .body
+            .contains("<option value=\"dinner\" selected>")
+    );
+}
+
+#[tokio::test]
 async fn nutrients_keep_their_colour_classes() {
     let a = app().await;
     a.setup().await;
@@ -2157,6 +2204,8 @@ async fn every_page_requires_a_login() {
     assert_eq!(r.location.as_deref(), Some("/login?next=%2Fweight"));
     for path in [
         "/diary",
+        "/gym",
+        "/gym/workouts",
         "/settings/export.json",
         "/settings/backup.sqlite",
         "/nope",
@@ -2516,4 +2565,747 @@ async fn guesses_sent_at_once_are_limited_too() {
         }
     }
     assert_eq!(judged, 10, "only ten guesses were checked");
+}
+
+/// The id at the end of a redirect such as `/gym/programs/3?msg=…`.
+fn location_id(r: &Resp, prefix: &str) -> i64 {
+    let loc = r.location.as_deref().expect("redirect");
+    loc.strip_prefix(prefix)
+        .and_then(|rest| rest.split(['?', '/', '#']).next())
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_else(|| panic!("unexpected redirect {loc}"))
+}
+
+#[tokio::test]
+async fn gym_program_from_a_template_follows_the_week_and_language() {
+    let a = app().await;
+    a.post("/setup", "unit_system=metric&timezone=UTC").await;
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=fr")
+        .await;
+
+    let empty = a.get("/gym").await;
+    assert_eq!(empty.status, StatusCode::OK);
+    assert!(
+        empty.body.contains("Partir d&#39;un modèle") || empty.body.contains("Partir d'un modèle")
+    );
+    assert!(empty.body.contains("Poussée / Tirage / Jambes"));
+
+    let r = a.post("/gym/programs", "starter=ppl").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let program = location_id(&r, "/gym/programs/");
+
+    let overview = a.get("/gym").await.body;
+    assert!(overview.contains("lundi") && overview.contains("Repos"));
+    assert!(overview.contains(r#"row-title">Poussée<"#));
+    assert!(overview.contains("6 exercices"));
+
+    let page = a.get(&format!("/gym/programs/{program}")).await.body;
+    assert!(page.contains("Programme actuel"));
+    let push: i64 = sqlx::query_scalar(
+        "SELECT id FROM gym_routines WHERE program_id = ? ORDER BY position LIMIT 1",
+    )
+    .bind(program)
+    .fetch_one(&a.db)
+    .await
+    .unwrap();
+    let routine = a.get(&format!("/gym/routines/{push}")).await.body;
+    assert!(routine.contains("Développé couché à la barre"), "{routine}");
+    assert!(routine.contains("4 × 6–8 répétitions"));
+    assert!(routine.contains("Repos 2:30 min"));
+
+    // The exercise list finds an exercise by its English name too.
+    let list = a.get("/gym/exercises?q=bench").await.body;
+    assert!(list.contains("Développé couché à la barre"));
+    assert!(!list.contains("Squat à la barre"));
+    let legs = a.get("/gym/exercises?muscle=calves").await.body;
+    assert!(legs.contains("Extension des mollets debout à la machine"));
+    assert!(!legs.contains("Développé couché"));
+
+    // Unknown templates and ids are not found.
+    assert_eq!(
+        a.post("/gym/programs", "starter=nope").await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        a.get("/gym/programs/999").await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        a.get("/gym/routines/abc").await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        a.get(&format!("/gym/routines/{push}/items/new?exercise=nope"))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn gym_routines_and_exercises_are_built_edited_and_ordered() {
+    let a = app().await;
+    a.post("/setup", "unit_system=imperial&timezone=UTC").await;
+
+    let bad = a.post("/gym/programs", "name=&schedule=sometimes").await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(bad.body.contains("Enter a name."));
+    assert!(bad.body.contains("Choose how the routines are scheduled."));
+
+    let r = a
+        .post("/gym/programs", "name=Strength&schedule=weekly")
+        .await;
+    let program = location_id(&r, "/gym/programs/");
+    let r = a
+        .post(
+            &format!("/gym/programs/{program}/routines"),
+            "name=Upper&day0=on&day3=on",
+        )
+        .await;
+    let routine = location_id(&r, "/gym/routines/");
+    assert!(
+        a.get(&format!("/gym/programs/{program}"))
+            .await
+            .body
+            .contains("Mon, Thu")
+    );
+
+    // Picking from the list leads to the plan form for that routine.
+    let pick = a
+        .get(&format!("/gym/exercises?routine={routine}&q=bench"))
+        .await;
+    assert!(pick.body.contains(&format!(
+        "/gym/routines/{routine}/items/new?exercise=barbell_bench_press"
+    )));
+
+    let add = |q: &'static str, form: &'static str| {
+        let a = &a;
+        async move {
+            a.post(&format!("/gym/routines/{routine}/items?{q}"), form)
+                .await
+        }
+    };
+    for bad in [
+        "sets=0&reps=8",
+        "sets=3&reps=12-8",
+        "sets=3&reps=",
+        "sets=3&reps=8&weight=abc",
+        "sets=3&reps=8&rest=20:00",
+    ] {
+        let r = add("exercise=barbell_bench_press", bad).await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+    }
+    let r = add(
+        "exercise=barbell_bench_press",
+        "sets=4&reps=8-12&weight=135&rest=1:30&note=pause",
+    )
+    .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some(format!("/gym/routines/{routine}?msg=exercise_added").as_str())
+    );
+    let kg: f64 = sqlx::query_scalar("SELECT weight_kg FROM gym_routine_exercises")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert!((kg - 61.234969).abs() < 1e-5, "stored in kg");
+
+    // A timed exercise asks for a time, not reps.
+    assert_eq!(
+        add("exercise=plank", "sets=3&reps=10").await.status,
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    add("exercise=plank", "sets=3&duration=1:00&rest=60").await;
+
+    let page = a.get(&format!("/gym/routines/{routine}")).await.body;
+    assert!(page.contains("4 × 8–12 reps"));
+    assert!(page.contains("135 lb · Rest 1:30 min"));
+    assert!(page.contains("3 × 1 min"));
+    let ids: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM gym_routine_exercises WHERE routine_id = ? ORDER BY position",
+    )
+    .bind(routine)
+    .fetch_all(&a.db)
+    .await
+    .unwrap();
+    let (bench, plank) = (ids[0], ids[1]);
+
+    a.post(&format!("/gym/items/{plank}/move"), "dir=up").await;
+    let order: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM gym_routine_exercises WHERE routine_id = ? ORDER BY position",
+    )
+    .bind(routine)
+    .fetch_all(&a.db)
+    .await
+    .unwrap();
+    assert_eq!(order, [plank, bench]);
+    // Moving past the top changes nothing.
+    a.post(&format!("/gym/items/{plank}/move"), "dir=up").await;
+    assert_eq!(
+        a.post(&format!("/gym/items/{plank}/move"), "dir=sideways")
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+
+    let edit = a.get(&format!("/gym/items/{bench}")).await.body;
+    assert!(edit.contains(r#"value="8-12""#) && edit.contains(r#"value="1:30""#));
+    let r = a
+        .post(
+            &format!("/gym/items/{bench}"),
+            "sets=5&reps=5&weight=&rest=",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let (sets, max, weight): (i64, Option<i64>, Option<f64>) =
+        sqlx::query_as("SELECT sets, reps_max, weight_kg FROM gym_routine_exercises WHERE id = ?")
+            .bind(bench)
+            .fetch_one(&a.db)
+            .await
+            .unwrap();
+    assert_eq!((sets, max, weight), (5, None, None));
+
+    // A custom exercise created while picking goes straight to the plan form.
+    let bad = a
+        .post("/gym/exercises", "name=Sled+push&muscle=&equipment=")
+        .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let r = a
+        .post(
+            "/gym/exercises",
+            &format!("name=Sled+push&muscle=quads&equipment=other&routine={routine}"),
+        )
+        .await;
+    let loc = r.location.unwrap();
+    assert!(loc.starts_with(&format!("/gym/routines/{routine}/items/new?custom=")));
+    let custom: i64 = loc.rsplit('=').next().unwrap().parse().unwrap();
+    add_custom(&a, routine, custom).await;
+    assert!(
+        a.get(&format!("/gym/routines/{routine}"))
+            .await
+            .body
+            .contains("Sled push")
+    );
+    assert!(
+        a.get("/gym/exercises?q=sled")
+            .await
+            .body
+            .contains("Sled push")
+    );
+    let r = a.post(&format!("/gym/exercises/{custom}/delete"), "").await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "in use");
+
+    // Deleting a routine takes its exercises; then the custom exercise can go.
+    a.post(&format!("/gym/routines/{routine}/delete"), "").await;
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gym_routine_exercises")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+    let r = a.post(&format!("/gym/exercises/{custom}/delete"), "").await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/gym/exercises?msg=exercise_deleted")
+    );
+}
+
+async fn add_custom(a: &App, routine: i64, custom: i64) {
+    let r = a
+        .post(
+            &format!("/gym/routines/{routine}/items?custom={custom}"),
+            "sets=3&reps=20",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+}
+
+#[tokio::test]
+async fn gym_rotation_order_current_program_and_deletion() {
+    let a = app().await;
+    a.setup().await;
+    let first = location_id(
+        &a.post("/gym/programs", "name=First&schedule=weekly").await,
+        "/gym/programs/",
+    );
+    let r = a
+        .post("/gym/programs", "name=Second&schedule=rotation")
+        .await;
+    let second = location_id(&r, "/gym/programs/");
+    let is_active = |id: i64| {
+        let db = a.db.clone();
+        async move {
+            sqlx::query_scalar::<_, bool>("SELECT active FROM gym_programs WHERE id = ?")
+                .bind(id)
+                .fetch_one(&db)
+                .await
+                .unwrap()
+        }
+    };
+    assert!(is_active(first).await && !is_active(second).await);
+
+    let mut routines = Vec::new();
+    for name in ["A", "B", "C"] {
+        let r = a
+            .post(
+                &format!("/gym/programs/{second}/routines"),
+                &format!("name={name}&day0=on"),
+            )
+            .await;
+        routines.push(location_id(&r, "/gym/routines/"));
+    }
+    let days: i64 = sqlx::query_scalar("SELECT MAX(weekdays) FROM gym_routines")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(days, 0, "a rotation has no days");
+    a.post(&format!("/gym/routines/{}/move", routines[2]), "dir=up")
+        .await;
+    let names: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM gym_routines WHERE program_id = ? ORDER BY position")
+            .bind(second)
+            .fetch_all(&a.db)
+            .await
+            .unwrap();
+    assert_eq!(names, ["A", "C", "B"]);
+    assert!(
+        a.get(&format!("/gym/routines/{}", routines[2]))
+            .await
+            .body
+            .contains("Session 2 of the rotation")
+    );
+
+    let r = a
+        .post(&format!("/gym/programs/{second}/activate"), "")
+        .await;
+    assert_eq!(r.location.as_deref(), Some("/gym?msg=program_activated"));
+    assert!(is_active(second).await && !is_active(first).await);
+    let overview = a.get("/gym").await.body;
+    assert!(overview.contains("rotation-list"));
+    assert!(
+        overview.contains(r#"row-title">First<"#),
+        "listed among the others"
+    );
+
+    // Deleting the current program makes another one current.
+    a.post(&format!("/gym/programs/{second}/delete"), "").await;
+    assert!(is_active(first).await);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gym_routines")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0, "routines go with their program");
+}
+
+#[tokio::test]
+async fn gym_programs_are_exported_and_imported() {
+    let a = app().await;
+    a.setup().await;
+    a.post("/gym/programs", "starter=upper_lower").await;
+    let r = a
+        .post(
+            "/gym/exercises",
+            "name=Neck+curl&muscle=back&equipment=other&timed=on",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let routine: i64 = sqlx::query_scalar("SELECT MIN(id) FROM gym_routines")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    let custom: i64 = sqlx::query_scalar("SELECT id FROM gym_exercises")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    let r = a
+        .post(
+            &format!("/gym/routines/{routine}/items?custom={custom}"),
+            "sets=2&duration=30",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+
+    let export = a.get("/settings/export.json").await;
+    let mut parsed: korpus::backup::Export = serde_json::from_str(&export.body).unwrap();
+    assert_eq!(parsed.gym_programs.len(), 1);
+    assert_eq!(parsed.gym_routines.len(), 4);
+
+    let b = app().await;
+    let summary = korpus::backup::import(&b.db, &parsed, Lang::En)
+        .await
+        .unwrap();
+    assert_eq!(summary.gym_programs, 1);
+    let page = b.get(&format!("/gym/routines/{routine}")).await.body;
+    assert!(page.contains("Barbell bench press") && page.contains("Neck curl"));
+    assert!(page.contains("2 × 30 s"));
+
+    // An exercise that is not in the list is refused, with nothing imported.
+    parsed.gym_routine_exercises[0].exercise_key = Some("moon_press".into());
+    let c = app().await;
+    assert!(
+        korpus::backup::import(&c.db, &parsed, Lang::En)
+            .await
+            .is_err()
+    );
+    let programs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gym_programs")
+        .fetch_one(&c.db)
+        .await
+        .unwrap();
+    assert_eq!(programs, 0);
+}
+
+/// (exercise id, set id) of every set of a workout, in page order.
+async fn workout_sets(a: &App, workout: i64) -> Vec<(i64, i64)> {
+    sqlx::query_as(
+        "SELECT e.id, s.id FROM gym_workout_sets s
+         JOIN gym_workout_exercises e ON e.id = s.workout_exercise_id
+         WHERE e.workout_id = ? ORDER BY e.position, e.id, s.position, s.id",
+    )
+    .bind(workout)
+    .fetch_all(&a.db)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn gym_workout_is_logged_from_a_routine_and_prefills_the_next_one() {
+    let a = app().await;
+    a.post("/setup", "unit_system=metric&timezone=UTC").await;
+    let r = a
+        .post("/gym/programs", "name=Strength&schedule=weekly")
+        .await;
+    let program = location_id(&r, "/gym/programs/");
+    let every_day = "name=Push&day0=on&day1=on&day2=on&day3=on&day4=on&day5=on&day6=on";
+    let r = a
+        .post(&format!("/gym/programs/{program}/routines"), every_day)
+        .await;
+    let routine = location_id(&r, "/gym/routines/");
+    a.post(
+        &format!("/gym/routines/{routine}/items?exercise=barbell_bench_press"),
+        "sets=3&reps=8-12&weight=60&rest=1:30",
+    )
+    .await;
+    a.post(
+        &format!("/gym/routines/{routine}/items?exercise=plank"),
+        "sets=2&duration=30",
+    )
+    .await;
+
+    // Today's routine is offered on the Gym page and on the routine itself.
+    let overview = a.get("/gym").await.body;
+    assert!(overview.contains("Start Push"), "{overview}");
+    assert!(overview.contains("Start an empty workout"));
+    assert!(
+        a.get(&format!("/gym/routines/{routine}"))
+            .await
+            .body
+            .contains("Start workout")
+    );
+
+    let start = format!("routine={routine}");
+    let r = a.post("/gym/workouts", &start).await;
+    let workout = location_id(&r, "/gym/workouts/");
+    // Only one workout at a time: starting again leads back to it.
+    let again = a.post("/gym/workouts", &start).await;
+    assert_eq!(
+        again.location.as_deref(),
+        Some(format!("/gym/workouts/{workout}?msg=workout_open").as_str())
+    );
+    assert!(a.get("/gym").await.body.contains("In progress"));
+
+    // The sets start from the plan.
+    let page = a.get(&format!("/gym/workouts/{workout}")).await.body;
+    assert!(page.contains("Barbell bench press") && page.contains("Plank"));
+    assert!(
+        page.contains("3 × 8–12 reps · 60 kg · Rest 1:30 min"),
+        "{page}"
+    );
+    assert!(page.contains(r#"value="60""#) && page.contains(r#"value="8""#));
+    assert!(page.contains(r#"value="30""#), "plank time");
+    let sets = workout_sets(&a, workout).await;
+    assert_eq!(sets.len(), 5);
+    let (bench, plank) = (sets[0].0, sets[3].0);
+    let s: Vec<i64> = sets.iter().map(|(_, s)| *s).collect();
+    let url = format!("/gym/workouts/{workout}");
+
+    // Nothing ticked: the workout cannot be finished yet.
+    let r = a
+        .post(&url, "date=2026-01-02&name=Push&action=finish")
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("Mark at least one set as done"));
+
+    // A ticked set needs its reps; values are kept on the page.
+    let r = a
+        .post(
+            &url,
+            &format!(
+                "date=2026-01-02&name=Push&w{0}=62.5&r{0}=&done{0}=on&w{1}=abc&r{1}=10&action=save",
+                s[0], s[1]
+            ),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        r.body
+            .contains("Barbell bench press, set 1: Enter the reps you did.")
+    );
+    assert!(r.body.contains(r#"value="abc""#));
+    let r = a.post(&url, "date=2999-01-01&name=Push&action=save").await;
+    assert!(r.body.contains("Choose a date that is not in the future."));
+
+    // Values typed while the page is open are saved without leaving it.
+    let autosave = a
+        .send(
+            Request::post(&url)
+                .header(header::HOST, "localhost")
+                .header("sec-fetch-site", "same-origin")
+                .header("x-korpus-autosave", "1")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "date=2026-01-02&name=Push&w{0}=62.5&r{0}=12&done{0}=on",
+                    s[0]
+                )))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(autosave.status, StatusCode::NO_CONTENT);
+    let reps: Option<i64> = sqlx::query_scalar("SELECT reps FROM gym_workout_sets WHERE id = ?")
+        .bind(s[0])
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(reps, Some(12));
+
+    // Adding and removing sets keeps what was typed.
+    let r = a
+        .post(
+            &url,
+            &format!(
+                "date=2026-01-02&name=Push&w{0}=62.5&r{0}=12&done{0}=on&action=add_set:{bench}",
+                s[0]
+            ),
+        )
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some(format!("{url}#exercise-{bench}").as_str())
+    );
+    assert_eq!(workout_sets(&a, workout).await.len(), 6);
+    a.post(
+        &url,
+        &format!("date=2026-01-02&name=Push&action=remove_set:{bench}"),
+    )
+    .await;
+    assert_eq!(workout_sets(&a, workout).await.len(), 5);
+    // An exercise of another workout cannot be changed from this one.
+    let r = a
+        .post(&url, "date=2026-01-02&name=Push&action=add_set:999")
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    let r = a
+        .post(
+            &url,
+            &format!(
+                "date=2026-01-02&name=Push&note=Felt+strong\
+                 &w{0}=62.5&r{0}=12&done{0}=on&w{1}=62.5&r{1}=12&done{1}=on&w{2}=62.5&r{2}=9\
+                 &w{3}=&d{3}=0:45&done{3}=on&w{4}=&d{4}=30&action=finish",
+                s[0], s[1], s[2], s[3], s[4]
+            ),
+        )
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some(format!("{url}?msg=workout_finished").as_str())
+    );
+    // Sets left unticked are dropped.
+    assert_eq!(workout_sets(&a, workout).await.len(), 3);
+    let summary = a.get(&format!("{url}?msg=workout_finished")).await.body;
+    assert!(summary.contains("Workout finished."));
+    assert!(summary.contains("62.5 kg × 12") && summary.contains("45 s"));
+    assert!(summary.contains("Friday, 2 January 2026"));
+    assert!(summary.contains("1,500 kg"), "volume: {summary}");
+    assert!(summary.contains("Felt strong"));
+    let history = a.get("/gym/workouts").await.body;
+    assert!(history.contains("Push") && history.contains("2 Jan 2026 · 2 exercises · 3 sets"));
+    assert!(a.get("/gym").await.body.contains("Recent workouts"));
+
+    // The next workout starts from what was done last time, set by set.
+    let r = a.post("/gym/workouts", &start).await;
+    let next = location_id(&r, "/gym/workouts/");
+    assert_ne!(next, workout);
+    let page = a.get(&format!("/gym/workouts/{next}")).await.body;
+    assert!(page.contains("62.5 × 12"), "last time column");
+    assert!(page.contains(r#"value="62.5""#) && page.contains(r#"value="12""#));
+    assert!(page.contains(r#"value="45""#), "plank time from last time");
+    // Two of three planned sets at the top of the range: no nudge yet.
+    assert!(!page.contains("You could add a little weight"));
+
+    // Exercises can be added from the list.
+    let pick = a
+        .get(&format!("/gym/exercises?workout={next}&q=back+squat"))
+        .await
+        .body;
+    let add = format!("/gym/workouts/{next}/exercises?exercise=back_squat");
+    assert!(
+        pick.contains(&add) && pick.contains("Back to workout"),
+        "{pick}"
+    );
+    let r = a.post(&add, "").await;
+    assert!(
+        r.location
+            .as_deref()
+            .is_some_and(|l| l.starts_with(&format!("/gym/workouts/{next}#exercise-")))
+    );
+    let page = a.get(&format!("/gym/workouts/{next}")).await.body;
+    assert!(page.contains("Barbell back squat"));
+    let r = a
+        .post(
+            &format!("/gym/workouts/{next}"),
+            &format!("date=2026-01-04&name=Push&action=remove_exercise:{plank}"),
+        )
+        .await;
+    assert_eq!(
+        r.status,
+        StatusCode::NOT_FOUND,
+        "plank belongs to the first workout"
+    );
+
+    // Discarding the workout in progress leaves the finished one.
+    let r = a.post(&format!("/gym/workouts/{next}/delete"), "").await;
+    assert_eq!(r.location.as_deref(), Some("/gym?msg=workout_discarded"));
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gym_workouts")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    // A picker for a finished or missing workout does not add to it.
+    let r = a.get(&format!("/gym/exercises?workout={workout}")).await;
+    assert_eq!(r.location.as_deref(), Some(url.as_str()));
+    assert_eq!(
+        a.post(
+            &format!("/gym/workouts/{workout}/exercises?exercise=plank"),
+            ""
+        )
+        .await
+        .location
+        .as_deref(),
+        Some(url.as_str())
+    );
+
+    // Editing the routine later leaves the logged workout as it was.
+    a.post(&format!("/gym/routines/{routine}/delete"), "").await;
+    let summary = a.get(&url).await.body;
+    assert!(summary.contains("62.5 kg × 12") && summary.contains("Push"));
+}
+
+#[tokio::test]
+async fn gym_free_workout_takes_new_exercises_and_can_be_corrected_later() {
+    let a = app().await;
+    a.post("/setup", "unit_system=imperial&timezone=UTC").await;
+    let r = a.post("/gym/workouts", "").await;
+    let workout = location_id(&r, "/gym/workouts/");
+    let page = a.get(&format!("/gym/workouts/{workout}")).await.body;
+    assert!(page.contains("<h1>Workout</h1>"));
+    assert!(page.contains("No exercises yet."));
+
+    // Adding an exercise from a workout: it is created, then added.
+    let r = a
+        .post(
+            "/gym/exercises",
+            &format!("name=Sled+push&muscle=quads&equipment=other&workout={workout}"),
+        )
+        .await;
+    assert!(
+        r.location
+            .as_deref()
+            .is_some_and(|l| l.starts_with(&format!("/gym/workouts/{workout}#exercise-")))
+    );
+    let sets = workout_sets(&a, workout).await;
+    assert_eq!(sets.len(), 3, "three sets without a plan or history");
+    let url = format!("/gym/workouts/{workout}");
+    let form = format!(
+        "date=2026-03-01&name=Leg+day&w{0}=90&r{0}=10&done{0}=on&action=finish",
+        sets[0].1
+    );
+    assert_eq!(a.post(&url, &form).await.status, StatusCode::SEE_OTHER);
+    // 90 lb are stored in kg and shown in lb.
+    let kg: f64 = sqlx::query_scalar("SELECT weight_kg FROM gym_workout_sets")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert!((kg - 40.823).abs() < 0.01);
+    assert!(a.get(&url).await.body.contains("90 lb × 10"));
+
+    // A finished workout can be corrected: every set kept counts as done.
+    let edit = a.get(&format!("{url}/edit")).await.body;
+    assert!(edit.contains("Edit workout") && !edit.contains("set-done"));
+    let r = a
+        .post(
+            &url,
+            &format!(
+                "date=2026-03-01&name=Leg+day&w{0}=95&r{0}=8&action=add_set:{1}",
+                sets[0].1, sets[0].0
+            ),
+        )
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some(format!("{url}/edit#exercise-{}", sets[0].0).as_str())
+    );
+    let r = a.post(&url, "date=2026-02-28&name=Legs&action=save").await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some(format!("{url}?msg=workout_saved").as_str())
+    );
+    let summary = a.get(&url).await.body;
+    assert!(summary.contains("<h1>Legs</h1>"));
+    assert_eq!(summary.matches("95 lb × 8").count(), 2, "{summary}");
+    assert!(summary.contains("Saturday, 28 February 2026"));
+
+    // Workouts are exported and imported with the rest.
+    let export = a.get("/settings/export.json").await;
+    let mut parsed: korpus::backup::Export = serde_json::from_str(&export.body).unwrap();
+    assert_eq!(
+        (
+            parsed.gym_workouts.len(),
+            parsed.gym_workout_exercises.len(),
+            parsed.gym_workout_sets.len()
+        ),
+        (1, 1, 2)
+    );
+    let b = app().await;
+    b.post("/setup", "unit_system=imperial&timezone=UTC").await;
+    let summary = korpus::backup::import(&b.db, &parsed, Lang::En)
+        .await
+        .unwrap();
+    assert_eq!(summary.gym_workouts, 1);
+    assert!(b.get(&url).await.body.contains("Sled push"));
+
+    // A set with impossible numbers is refused, with nothing imported.
+    parsed.gym_workout_sets[0].reps = Some(-3);
+    let c = app().await;
+    assert!(
+        korpus::backup::import(&c.db, &parsed, Lang::En)
+            .await
+            .is_err()
+    );
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM gym_workouts")
+        .fetch_one(&c.db)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+
+    // Deleting a finished workout returns to the history.
+    let r = a.post(&format!("{url}/delete"), "").await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/gym/workouts?msg=workout_deleted")
+    );
+    assert!(
+        a.get("/gym/workouts?msg=workout_deleted")
+            .await
+            .body
+            .contains("No finished workouts yet.")
+    );
 }

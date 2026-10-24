@@ -1,0 +1,15 @@
+<div class="group">
+  <div class="form-row">
+    <label for="name">{{ lang.t("Name") }}</label>
+    <div class="control"><input type="text" id="name" name="name" value="{{ name }}" maxlength="80" required autocomplete="off" placeholder="{{ lang.t("e.g. Push") }}" {% if errors.has("name") %}aria-invalid="true" aria-describedby="name-error"{% endif %}></div>
+    {% if let Some(e) = errors.get("name") %}<p class="field-error" id="name-error">{{ e }}</p>{% endif %}
+  </div>
+  {% if weekly %}
+  <fieldset class="form-row stacked" id="days">
+    <legend>{{ lang.t("Days") }} <span class="opt">{{ lang.t("(optional)") }}</span></legend>
+    <div class="weekdays">
+      {% for d in days %}<label><input type="checkbox" name="day{{ d.index }}" value="on"{% if d.checked %} checked{% endif %}><span aria-hidden="true">{{ d.short }}</span><span class="visually-hidden">{{ d.long }}</span></label>{% endfor %}
+    </div>
+  </fieldset>
+  {% endif %}
+</div>

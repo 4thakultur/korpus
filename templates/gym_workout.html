@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+{% if open %}
+<a class="back-link" href="/gym">{% include "_back.html" %}{{ lang.t("Back to gym") }}</a>
+{% else %}
+<a class="back-link" href="{{ cancel_url }}">{% include "_back.html" %}{{ lang.t("Back to workout") }}</a>
+{% endif %}
+{% include "_flash.html" %}
+<header class="page-head">
+  <h1>{{ title }}</h1>
+  <p class="subtitle">{% if open %}{{ lang.t("In progress") }}{% else %}{{ lang.t("Edit workout") }}{% endif %}</p>
+</header>
+{% if !summary.is_empty() %}
+<div class="error-summary" role="alert" tabindex="-1" data-focus>
+  <h2>{{ lang.t("Please correct the following") }}</h2>
+  <ul>
+  {% for (field, msg) in summary %}
+    <li><a href="#{{ field }}">{{ msg }}</a></li>
+  {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" action="{{ action }}" class="workout-form" novalidate{% if open %} data-workout data-invalid="{{ lang.t("Some values could not be saved. Check them, then save.") }}"{% endif %}>
+  {# Enter in a field saves, rather than pressing the first button below. #}
+  <button type="submit" name="action" value="save" class="visually-hidden" tabindex="-1" aria-hidden="true">{{ lang.t("Save") }}</button>
+
+  {% for e in exercises %}
+  <section class="section workout-exercise" id="exercise-{{ e.id }}" aria-labelledby="exercise-{{ e.id }}-name" data-rest="{{ e.rest_s }}">
+    <div class="section-head"><h2 id="exercise-{{ e.id }}-name">{{ e.name }}</h2></div>
+    {% if !e.plan.is_empty() %}<p class="hint plan-hint"><span class="visually-hidden">{{ lang.t("Plan") }}: </span>{{ e.plan }}</p>{% endif %}
+    {% if e.progress %}<p class="note progress-note">{{ lang.t("Last time you reached the top of the range on every set. You could add a little weight.") }}</p>{% endif %}
+    <div class="list set-list">
+      <table class="set-table{% if open %} has-done{% endif %}">
+        <thead>
+          <tr>
+            <th scope="col" id="c{{ e.id }}n">{{ lang.t("Set") }}</th>
+            <th scope="col" id="c{{ e.id }}p">{{ lang.t("Last time") }}</th>
+            <th scope="col" id="c{{ e.id }}w">{% if e.bodyweight %}+{% endif %}{{ unit }}<span class="visually-hidden"> ({% if e.bodyweight %}{{ lang.t("Added weight") }}{% else %}{{ lang.t("Weight") }}{% endif %})</span></th>
+            <th scope="col" id="c{{ e.id }}a">{% if e.timed %}{{ lang.t("Time") }}{% else %}{{ lang.t("Reps") }}{% endif %}</th>
+            {% if open %}<th scope="col" id="c{{ e.id }}d"><span aria-hidden="true">✓</span><span class="visually-hidden">{{ lang.t("Done") }}</span></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in e.sets %}
+          <tr{% if s.done && open %} class="is-done"{% endif %}>
+            <th scope="row" id="s{{ s.id }}"><span class="visually-hidden">{{ lang.t("Set") }} </span>{{ s.number }}</th>
+            <td class="set-previous">{% if s.previous.is_empty() %}<span aria-hidden="true">–</span><span class="visually-hidden">{{ lang.t("None") }}</span>{% else %}{{ s.previous }}{% endif %}</td>
+            <td><input type="text" id="w{{ s.id }}" name="w{{ s.id }}" value="{{ s.weight }}" inputmode="decimal" autocomplete="off" aria-labelledby="c{{ e.id }}w s{{ s.id }}"{% if s.weight_error.is_some() %} aria-invalid="true" aria-describedby="w{{ s.id }}-error"{% endif %}></td>
+            {% if e.timed %}
+            <td><input type="text" id="d{{ s.id }}" name="d{{ s.id }}" value="{{ s.duration }}" autocomplete="off" aria-labelledby="c{{ e.id }}a s{{ s.id }}"{% if s.duration_error.is_some() %} aria-invalid="true" aria-describedby="d{{ s.id }}-error"{% endif %}></td>
+            {% else %}
+            <td><input type="text" id="r{{ s.id }}" name="r{{ s.id }}" value="{{ s.reps }}" inputmode="numeric" autocomplete="off" aria-labelledby="c{{ e.id }}a s{{ s.id }}"{% if s.reps_error.is_some() %} aria-invalid="true" aria-describedby="r{{ s.id }}-error"{% endif %}></td>
+            {% endif %}
+            {% if open %}<td><input type="checkbox" class="set-done" id="done{{ s.id }}" name="done{{ s.id }}" value="on" aria-labelledby="c{{ e.id }}d s{{ s.id }}"{% if s.done %} checked{% endif %}></td>{% endif %}
+          </tr>
+          {% if s.weight_error.is_some() || s.reps_error.is_some() || s.duration_error.is_some() %}
+          <tr class="set-error-row">
+            <td colspan="{% if open %}5{% else %}4{% endif %}">
+              {% if let Some(m) = s.weight_error %}<p class="field-error" id="w{{ s.id }}-error">{{ m }}</p>{% endif %}
+              {% if let Some(m) = s.reps_error %}<p class="field-error" id="r{{ s.id }}-error">{{ m }}</p>{% endif %}
+              {% if let Some(m) = s.duration_error %}<p class="field-error" id="d{{ s.id }}-error">{{ m }}</p>{% endif %}
+            </td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="set-actions">
+      <button type="submit" name="action" value="add_set:{{ e.id }}" class="pill"{% if !e.can_add_set %} disabled{% endif %}>{{ lang.t("Add set") }}<span class="visually-hidden"> ({{ e.name }})</span></button>
+      <button type="submit" name="action" value="remove_set:{{ e.id }}" class="pill"{% if e.sets.len() <= 1 %} disabled{% endif %}>{{ lang.t("Remove set") }}<span class="visually-hidden"> ({{ e.name }})</span></button>
+      <button type="submit" name="action" value="remove_exercise:{{ e.id }}" class="pill plain danger-text">{{ lang.t("Remove") }}<span class="visually-hidden"> {{ e.name }}</span></button>
+    </div>
+  </section>
+  {% endfor %}
+
+  {% if exercises.is_empty() %}
+  <div class="list section"><p class="list-empty">{{ lang.t("No exercises yet. Add the first one below.") }}</p></div>
+  {% endif %}
+  {% if can_add_exercise %}
+  <ul class="list section">
+    <li><button type="submit" name="action" value="add_exercise" class="row add-row starter-row">{% include "_plus.html" %}<span class="row-main">{{ lang.t("Add exercise") }}</span></button></li>
+  </ul>
+  {% endif %}
+
+  <div class="group">
+    <div class="form-row">
+      <label for="date">{{ lang.t("Date") }}</label>
+      <div class="control"><input type="date" id="date" name="date" value="{{ date }}" required data-calendar {% if errors.has("date") %}aria-invalid="true" aria-describedby="date-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("date") %}<p class="field-error" id="date-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label for="name">{{ lang.t("Name") }}</label>
+      <div class="control"><input type="text" id="name" name="name" value="{{ name }}" maxlength="80" required autocomplete="off" {% if errors.has("name") %}aria-invalid="true" aria-describedby="name-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("name") %}<p class="field-error" id="name-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="form-row">
+      <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+      <div class="control"><input type="text" id="note" name="note" value="{{ note }}" maxlength="500" autocomplete="off" {% if errors.has("note") %}aria-invalid="true" aria-describedby="note-error"{% endif %}></div>
+      {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+    </div>
+  </div>
+  {% if open %}
+  <div class="group-foot"><p>{{ lang.t("Sets you leave unticked are dropped when you finish.") }}</p></div>
+  {% endif %}
+  <div class="autosave-status" role="status" data-autosave-status></div>
+
+  <ul class="actions stacked">
+  {% if open %}
+    <li><button type="submit" id="finish" name="action" value="finish" class="primary">{{ lang.t("Finish workout") }}</button></li>
+    <li><button type="submit" name="action" value="save">{{ lang.t("Save and continue later") }}</button></li>
+  {% else %}
+    <li><button type="submit" name="action" value="save" class="primary">{{ lang.t("Save") }}</button></li>
+    <li><a class="button" href="{{ cancel_url }}">{{ lang.t("Cancel") }}</a></li>
+  {% endif %}
+  </ul>
+</form>
+
+{% if open %}
+<form method="post" action="/gym/workouts/{{ id }}/delete" data-confirm="{{ lang.t("Discard this workout?") }}" data-confirm-detail="{{ lang.t("The sets you logged in it are deleted.") }}" data-confirm-action="{{ lang.t("Discard") }}">
+  <button type="submit" class="danger block">{{ lang.t("Discard workout") }}</button>
+</form>
+<div class="rest-timer" data-rest-timer data-done="{{ lang.t("Rest over") }}" hidden>
+  <span class="rest-label">{{ lang.t("Rest") }}</span>
+  <span class="rest-left" role="timer" data-rest-left>0:00</span>
+  <button type="button" class="pill" data-rest-add aria-label="{{ lang.t("Add 15 seconds") }}">+15 s</button>
+  <button type="button" class="pill" data-rest-skip>{{ lang.t("Skip") }}</button>
+</div>
+<p class="visually-hidden" aria-live="polite" data-rest-announce></p>
+{% else %}
+<form method="post" action="/gym/workouts/{{ id }}/delete" data-confirm="{{ lang.t("Delete this workout?") }}">
+  <button type="submit" class="danger block">{{ lang.t("Delete workout") }}</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_flash.html" %}
+<header class="page-head"><h1>{{ title }}</h1></header>
+
+<section class="section" aria-labelledby="workout-heading">
+  <div class="section-head"><h2 id="workout-heading">{{ lang.t("Workout") }}</h2></div>
+  <ul class="list">
+  {% if let Some(w) = open_workout %}
+    <li><a class="row" href="{{ w.url }}">{% include "_gym_icon.html" %}<span class="row-main"><span class="row-title">{{ w.name }}</span><span class="row-sub">{{ w.sub }}</span></span><span class="row-value"><strong>{{ lang.t("Continue") }}</strong></span>{% include "_chevron.html" %}</a></li>
+  {% else %}
+    {% for r in suggested %}
+    <li>
+      <form method="post" action="/gym/workouts" class="result-form">
+        <input type="hidden" name="routine" value="{{ r.routine_id }}">
+        <button type="submit" class="row starter-row">{% include "_gym_icon.html" %}<span class="row-main"><span class="row-title">{{ lang.f1("Start {0}", r.name) }}</span><span class="row-sub">{{ r.sub }}</span></span></button>
+      </form>
+    </li>
+    {% endfor %}
+    <li>
+      <form method="post" action="/gym/workouts" class="result-form">
+        <button type="submit" class="row add-row starter-row">{% include "_plus.html" %}<span class="row-main">{{ lang.t("Start an empty workout") }}</span></button>
+      </form>
+    </li>
+  {% endif %}
+  </ul>
+</section>
+
+{% if let Some(p) = active %}
+<section class="section" aria-labelledby="current-heading">
+  <div class="section-head">
+    <h2 id="current-heading">{{ p.name }}</h2>
+    <a href="{{ active_url }}">{{ lang.t("Edit") }}<span class="visually-hidden"> {{ p.name }}</span></a>
+  </div>
+  {% if weekly %}
+  <ul class="list week-list">
+  {% for d in days %}
+    <li class="week-day{% if d.today %} is-today{% endif %}"{% if d.today %} aria-current="date"{% endif %}>
+      <div class="week-day-head">
+        <h3>{{ d.name }}</h3>
+        {% if d.today %}<span class="badge">{{ lang.t("Today") }}</span>{% endif %}
+        {% if d.routines.is_empty() %}<span class="pill rest-pill">{{ lang.t("Rest") }}</span>{% endif %}
+      </div>
+      {% if !d.routines.is_empty() %}
+      <ul class="week-routines">
+        {% for r in d.routines %}
+        <li><a class="row" href="{{ r.url }}">
+          {% include "_gym_icon.html" %}
+          <span class="row-main"><span class="row-title">{{ r.name }}</span><span class="row-sub">{{ r.sub }}</span></span>
+          {% include "_chevron.html" %}
+        </a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
+  {% if !sequence.is_empty() %}
+  <h3 class="list-title">{{ lang.t("Not on a day yet") }}</h3>
+  <ul class="list">
+    {% for r in sequence %}
+    <li><a class="row" href="{{ r.url }}">{% include "_gym_icon.html" %}<span class="row-main"><span class="row-title">{{ r.name }}</span><span class="row-sub">{{ r.sub }}</span></span>{% include "_chevron.html" %}</a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  {% if sequence.is_empty() %}
+  <div class="list"><p class="list-empty">{{ lang.t("This program has no routines yet.") }} <a href="{{ active_url }}">{{ lang.t("Add a routine") }}</a></p></div>
+  {% else %}
+  <ol class="list rotation-list">
+    {% for r in sequence %}
+    <li><a class="row" href="{{ r.url }}">
+      <span class="step-number" aria-hidden="true">{{ loop.index }}</span>
+      <span class="row-main"><span class="row-title">{{ r.name }}</span><span class="row-sub">{{ r.sub }}</span></span>
+      {% include "_chevron.html" %}
+    </a></li>
+    {% endfor %}
+  </ol>
+  <p class="hint">{{ lang.t("Do the routines in this order, then start again from the first. Each session is the next routine, whatever the day.") }}</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if !recent.is_empty() %}
+<section class="section" aria-labelledby="recent-heading">
+  <div class="section-head">
+    <h2 id="recent-heading">{{ lang.t("Recent workouts") }}</h2>
+    {% if more_history %}<a href="/gym/workouts">{{ lang.t("See all") }}</a>{% endif %}
+  </div>
+  <ul class="list">
+    {% for r in recent %}
+    <li><a class="row" href="{{ r.url }}"><span class="row-main"><span class="row-title">{{ r.name }}</span><span class="row-sub">{{ r.sub }}</span></span>{% include "_chevron.html" %}</a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="section" aria-labelledby="programs-heading">
+  <div class="section-head"><h2 id="programs-heading">{% if active.is_some() %}{{ lang.t("Other programs") }}{% else %}{{ lang.t("Programs") }}{% endif %}</h2></div>
+  <ul class="list">
+    {% for p in others %}
+    <li><a class="row" href="{{ p.url }}"><span class="row-main"><span class="row-title">{{ p.name }}</span><span class="row-sub">{{ p.sub }}</span></span>{% include "_chevron.html" %}</a></li>
+    {% endfor %}
+    <li><a class="row add-row" href="/gym/programs/new">{% include "_plus.html" %}<span class="row-main">{{ lang.t("New program") }}</span></a></li>
+  </ul>
+  {% if active.is_none() %}<p class="hint">{{ lang.t("A program groups the routines you train, such as Push, Pull and Legs, each with its exercises, sets and reps.") }}</p>{% endif %}
+</section>
+
+{% if active.is_none() %}
+<section class="section" aria-labelledby="starters-heading">
+  <div class="section-head"><h2 id="starters-heading">{{ lang.t("Start from a template") }}</h2></div>
+  {% include "_gym_starters.html" %}
+</section>
+{% endif %}
+
+<section class="section" aria-labelledby="library-heading">
+  <div class="section-head"><h2 id="library-heading" class="visually-hidden">{{ lang.t("Exercises") }}</h2></div>
+  <ul class="list">
+    <li><a class="row" href="/gym/exercises"><span class="row-main"><span class="row-title">{{ lang.t("Exercises") }}</span><span class="row-sub">{{ lang.t("Browse the exercise list and add your own") }}</span></span>{% include "_chevron.html" %}</a></li>
+  </ul>
+</section>
+{% endblock %}

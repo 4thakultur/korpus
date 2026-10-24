@@ -1,0 +1,4 @@
+<nav class="segmented seg-links" aria-label="{{ lang.t("Settings") }}">
+  <a href="/goals"{% if nav_tab == "goals" %} aria-current="page"{% endif %}><span>{{ lang.t("Goals") }}</span></a>
+  <a href="/settings"{% if nav_tab == "preferences" %} aria-current="page"{% endif %}><span>{{ lang.t("Preferences") }}</span></a>
+</nav>

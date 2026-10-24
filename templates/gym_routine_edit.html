@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="/gym/routines/{{ id }}">{% include "_back.html" %}{{ lang.t("Back to routine") }}</a>
+<header class="page-head"><h1>{{ title }}</h1></header>
+{% include "_errors.html" %}
+<form method="post" action="/gym/routines/{{ id }}">
+  {% include "_gym_routine_fields.html" %}
+  {% if !weekly %}<p class="group-foot">{{ lang.t("This program is a rotation, so routines have no days. Change the order on the program page.") }}</p>{% endif %}
+  <ul class="actions stacked">
+    <li><button type="submit" class="primary">{{ lang.t("Save") }}</button></li>
+    <li><a class="button" href="/gym/routines/{{ id }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+{% endblock %}

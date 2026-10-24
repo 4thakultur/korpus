@@ -2,6 +2,7 @@
 {% block content %}
 {% include "_flash.html" %}
 <header class="page-head"><h1>{{ lang.t("Settings") }}</h1></header>
+{% let nav_tab = "preferences" %}{% include "_settings_tabs.html" %}
 
 <section class="section" aria-labelledby="general-heading">
   <div class="section-head"><h2 id="general-heading">{{ lang.t("General") }}</h2></div>

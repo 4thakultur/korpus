@@ -22,6 +22,7 @@ pub async fn connect(url: &str) -> Result<SqlitePool, sqlx::Error> {
         && !parent.as_os_str().is_empty()
     {
         std::fs::create_dir_all(parent).map_err(sqlx::Error::Io)?;
+        check_writable(parent).map_err(sqlx::Error::Io)?;
     }
     let pool = SqlitePoolOptions::new()
         .max_connections(8)
@@ -30,6 +31,25 @@ pub async fn connect(url: &str) -> Result<SqlitePool, sqlx::Error> {
     MIGRATOR.run(&pool).await?;
     crate::foods::reindex_if_needed(&pool).await?;
     Ok(pool)
+}
+
+/// SQLite only reports "unable to open database file" when it lacks write
+/// access. WAL mode creates files next to the database, so the directory
+/// itself must be writable, not only the database file.
+fn check_writable(dir: &std::path::Path) -> std::io::Result<()> {
+    let probe = dir.join(".korpus-write-check");
+    match std::fs::File::create(&probe) {
+        Ok(_) => std::fs::remove_file(&probe),
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(std::io::Error::new(
+            e.kind(),
+            format!(
+                "Korpus cannot write to {}. Make that directory belong to the user \
+                 Korpus runs as (in Docker: chown it to PUID:PGID from .env, default 1000:1000)",
+                dir.display()
+            ),
+        )),
+        Err(e) => Err(e),
+    }
 }
 
 /// A private in-memory database with migrations applied, for tests.

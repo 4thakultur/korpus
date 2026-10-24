@@ -97,6 +97,9 @@ pub struct FoodPage {
     pub attribution: Option<&'static str>,
     pub date: String,
     pub meal: String,
+    /// No meal came with the page (opened from Foods, not from a diary
+    /// meal), so adding asks for one instead of trusting the time of day.
+    pub ask_meal: bool,
     pub amount: String,
     pub meals: [Meal; 4],
     pub errors: FieldErrors,
@@ -226,6 +229,7 @@ pub async fn detail_page(
         attribution,
         date,
         meal: meal.as_str().to_string(),
+        ask_meal: ctx.meal.is_none(),
         amount,
         meals: Meal::ALL,
         errors,

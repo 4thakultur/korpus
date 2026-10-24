@@ -1,0 +1,13 @@
+<ul class="list">
+  {% for s in starters %}
+  <li>
+    <form method="post" action="/gym/programs" class="result-form">
+      <input type="hidden" name="starter" value="{{ s.key }}">
+      <button type="submit" class="row starter-row">
+        <span class="row-main"><span class="row-title">{{ s.name }}</span><span class="row-sub">{{ s.description }}</span></span>
+      </button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+<p class="hint">{{ lang.t("A template becomes an ordinary program: rename it, change its days and exercises, and set your own weights.") }}</p>
