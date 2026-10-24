@@ -395,6 +395,256 @@
     });
   }
 
+  // Pop-up menus: each <select> becomes a button showing its value with up
+  // and down chevrons that opens a floating menu, as in iOS. The select
+  // stays in the form, hidden, and carries the value. The menu follows the
+  // WAI-ARIA listbox pattern: focus stays on the list and the highlighted
+  // option is announced through aria-activedescendant.
+  var menuCount = 0;
+  var MENU_MARGIN = 8;
+  var MENU_MAX_HEIGHT = 420;
+
+  function foldText(s) {
+    return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  }
+
+  function setupMenu(select) {
+    if (select.hasAttribute("data-menu") || select.multiple) return;
+    select.setAttribute("data-menu", "");
+    var id = select.id || "menu-select-" + (menuCount + 1);
+    var menuId = "menu-" + ++menuCount;
+    var label = select.labels && select.labels[0];
+    var check = '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4.5 12.5 5 5 10-11"/></svg>';
+
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "menu-button";
+    button.id = id + "-button";
+    button.setAttribute("aria-haspopup", "listbox");
+    button.setAttribute("aria-expanded", "false");
+    button.setAttribute("aria-controls", menuId);
+    button.innerHTML = '<span class="menu-value"></span><svg class="menu-chevrons" viewBox="0 0 10 16" fill="none" ' +
+      'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ' +
+      'focusable="false"><path d="m1.5 5.5 3.5-3.5 3.5 3.5M1.5 10.5l3.5 3.5 3.5-3.5"/></svg>';
+    var value = button.querySelector(".menu-value");
+    ["aria-describedby", "aria-invalid"].forEach(function (a) {
+      if (select.hasAttribute(a)) button.setAttribute(a, select.getAttribute(a));
+    });
+    if (label) {
+      if (!label.id) label.id = id + "-label";
+      // The name is the label followed by the current value.
+      button.setAttribute("aria-labelledby", label.id + " " + button.id);
+      label.htmlFor = button.id;
+    }
+
+    var list = document.createElement("ul");
+    list.className = "menu";
+    list.id = menuId;
+    list.hidden = true;
+    list.tabIndex = -1;
+    list.setAttribute("role", "listbox");
+    if (label) list.setAttribute("aria-labelledby", label.id);
+    var options = Array.prototype.slice.call(select.options).filter(function (o) { return !o.disabled; });
+    var items = options.map(function (o, i) {
+      var li = document.createElement("li");
+      li.id = menuId + "-" + i;
+      li.setAttribute("role", "option");
+      if (o.lang) li.lang = o.lang;
+      li.innerHTML = check + '<span class="menu-text"></span>';
+      li.querySelector(".menu-text").textContent = o.textContent;
+      list.appendChild(li);
+      return li;
+    });
+    var active = -1;
+
+    function selectedIndex() {
+      for (var i = 0; i < options.length; i++) if (options[i].selected) return i;
+      return 0;
+    }
+    function show() {
+      var o = options[selectedIndex()];
+      value.textContent = o ? o.textContent : "";
+      if (o && o.lang) value.lang = o.lang; else value.removeAttribute("lang");
+    }
+    function setActive(i, scroll) {
+      if (!items.length) return;
+      active = Math.max(0, Math.min(items.length - 1, i));
+      items.forEach(function (li, k) { li.classList.toggle("active", k === active); });
+      list.setAttribute("aria-activedescendant", items[active].id);
+      if (scroll) items[active].scrollIntoView({ block: "nearest" });
+    }
+    // Below the button when it fits, otherwise wherever there is more room;
+    // right edges aligned, as values sit on the right of their rows.
+    function place() {
+      var r = button.getBoundingClientRect();
+      var vw = document.documentElement.clientWidth, vh = window.innerHeight;
+      // Stay clear of the floating tab bar.
+      var bar = document.querySelector(".tab-bar");
+      if (bar && getComputedStyle(bar).position === "fixed") vh = Math.min(vh, bar.getBoundingClientRect().top);
+      var below = vh - r.bottom - MENU_MARGIN * 2, above = r.top - MENU_MARGIN * 2;
+      var natural = Math.min(list.scrollHeight, MENU_MAX_HEIGHT);
+      var down = natural <= below || below >= above;
+      list.style.maxHeight = Math.min(MENU_MAX_HEIGHT, down ? below : above) + "px";
+      var h = list.offsetHeight, w = list.offsetWidth;
+      var left = Math.max(MENU_MARGIN, Math.min(r.right - w, vw - w - MENU_MARGIN));
+      list.style.left = left + "px";
+      list.style.top = (down ? r.bottom + MENU_MARGIN : r.top - MENU_MARGIN - h) + "px";
+      list.classList.toggle("up", !down);
+    }
+    function follow(e) { if (e.target !== list) place(); }
+    function open() {
+      if (!list.hidden) return;
+      items.forEach(function (li, k) { li.setAttribute("aria-selected", String(options[k].selected)); });
+      list.hidden = false;
+      button.setAttribute("aria-expanded", "true");
+      place();
+      setActive(selectedIndex(), true);
+      list.focus({ preventScroll: true });
+      window.addEventListener("resize", close);
+      window.addEventListener("scroll", follow, true);
+    }
+    function close(restoreFocus) {
+      if (list.hidden) return;
+      list.hidden = true;
+      list.classList.remove("keyboard");
+      button.setAttribute("aria-expanded", "false");
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", follow, true);
+      if (restoreFocus === true) button.focus();
+    }
+    function choose(i) {
+      var o = options[i];
+      close(true);
+      if (!o || o.selected) return;
+      select.value = o.value;
+      show();
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    var typed = "", typedAt = 0;
+    function typeahead(ch) {
+      var now = Date.now();
+      typed = now - typedAt > 600 ? ch : typed + ch;
+      typedAt = now;
+      var q = foldText(typed);
+      // Repeating one letter cycles through the options starting with it.
+      var cycle = q.length > 1 && q.split("").every(function (c) { return c === q[0]; });
+      if (cycle) q = q[0];
+      var start = cycle || q.length === 1 ? active + 1 : active;
+      for (var n = 0; n < items.length; n++) {
+        var k = (start + n) % items.length;
+        if (foldText(options[k].textContent).indexOf(q) === 0) { setActive(k, true); return; }
+      }
+    }
+
+    show();
+    select.hidden = true;
+    select.after(button);
+    document.body.appendChild(list);
+
+    button.addEventListener("click", function () {
+      if (list.hidden) open(); else close(true);
+    });
+    button.addEventListener("keydown", function (e) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        open();
+        list.classList.add("keyboard");
+      }
+    });
+    list.addEventListener("keydown", function (e) {
+      var page = Math.max(1, Math.floor(list.clientHeight / 44) - 1);
+      var to = {
+        ArrowDown: active + 1, ArrowUp: active - 1, Home: 0, End: items.length - 1,
+        PageDown: active + page, PageUp: active - page
+      }[e.key];
+      if (to !== undefined) {
+        e.preventDefault();
+        list.classList.add("keyboard");
+        setActive(to, true);
+      } else if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (e.key === " " && typed && Date.now() - typedAt < 600) { typeahead(" "); return; }
+        choose(active);
+      } else if (e.key === "Escape" || e.key === "Tab") {
+        e.preventDefault();
+        close(true);
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        list.classList.add("keyboard");
+        typeahead(e.key);
+      }
+    });
+    list.addEventListener("pointermove", function (e) {
+      var li = e.target.closest("[role=option]");
+      if (!li) return;
+      list.classList.remove("keyboard");
+      var k = items.indexOf(li);
+      if (k !== active) setActive(k, false);
+    });
+    list.addEventListener("click", function (e) {
+      var li = e.target.closest("[role=option]");
+      if (li) choose(items.indexOf(li));
+    });
+    list.addEventListener("focusout", function (e) {
+      if (!list.contains(e.relatedTarget) && e.relatedTarget !== button) close(false);
+    });
+    document.addEventListener("pointerdown", function (e) {
+      if (!list.hidden && !list.contains(e.target) && !button.contains(e.target)) close(false);
+    });
+    // A section re-rendered by autosave takes the select (and its button)
+    // out of the page; its menu goes with it.
+    new MutationObserver(function (_, observer) {
+      if (!select.isConnected) { close(false); list.remove(); observer.disconnect(); }
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  // File fields: the browser's own button is unstyled and speaks the
+  // browser's language, so a row shows the chosen file's name with a tinted
+  // button instead. The input stays in the form and receives the files.
+  function setupFilePicker(input) {
+    var label = input.labels && input.labels[0];
+    var row = document.createElement("div");
+    row.className = "file-pick";
+    var name = document.createElement("span");
+    name.className = "file-name";
+    name.id = input.id + "-name";
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "pill";
+    button.id = input.id + "-button";
+    button.textContent = t("choose-file", "Choose file");
+    ["aria-describedby", "aria-invalid"].forEach(function (a) {
+      if (input.hasAttribute(a)) button.setAttribute(a, input.getAttribute(a));
+    });
+    if (label) {
+      if (!label.id) label.id = input.id + "-label";
+      button.setAttribute("aria-labelledby", label.id + " " + button.id + " " + name.id);
+      label.htmlFor = button.id;
+    }
+    function show() {
+      var files = input.files || [];
+      name.textContent = files.length === 1 ? files[0].name
+        : files.length > 1 ? t("files", "{n} files").replace("{n}", files.length)
+        : t("no-file", "No file chosen");
+      row.classList.toggle("has-file", files.length > 0);
+      if (files.length) row.classList.remove("invalid");
+    }
+    input.classList.add("visually-hidden");
+    input.tabIndex = -1;
+    input.after(row);
+    row.appendChild(name);
+    row.appendChild(button);
+    button.addEventListener("click", function () { input.click(); });
+    input.addEventListener("change", show);
+    // A required field left empty is reported on the visible button.
+    input.addEventListener("invalid", function () {
+      row.classList.add("invalid");
+      button.focus();
+    });
+    show();
+  }
+
   // Tab switching: the selected tab always draws its own highlight. Only
   // while switching does a pill take its place, sliding from the previous
   // tab to the chosen one; it is removed once the slide ends. The previous
@@ -449,6 +699,109 @@
 
     // Back/forward cache restores this page as it was left: mid-switch.
     window.addEventListener("pageshow", function (e) { if (e.persisted) finish(); });
+  }
+
+  // Settings apply as soon as they change. The form is posted in the
+  // background; the server redirects to the refreshed page on success or
+  // answers 422 with the errors, and the parts of the page that depend on
+  // the saved values are swapped in. A language change reloads the page so
+  // every label is in the new language.
+  var AUTOSAVE_DELAY = 400;
+
+  function sectionOf(el) { return el.closest("section[aria-labelledby]"); }
+
+  function freshSection(doc, section) {
+    return doc.querySelector('section[aria-labelledby="' + section.getAttribute("aria-labelledby") + '"]');
+  }
+
+  // `savedLanguage` carries the stored language over when a form is
+  // re-rendered with errors, as it may show an unsaved choice.
+  function setupAutosave(form, savedLanguage) {
+    var timer = null;
+    var seq = 0;
+    var language = form.querySelector('[name="language"]');
+    if (savedLanguage === undefined) savedLanguage = language ? language.value : null;
+
+    function showStatus(f, text, isError) {
+      var status = f.querySelector("[data-autosave-status]");
+      if (!status || !text) return;
+      var p = document.createElement("p");
+      p.className = isError ? "warning" : "flash";
+      p.textContent = text;
+      status.replaceChildren(p);
+    }
+
+    // Replaces the form's section with its refreshed version and returns
+    // the new form.
+    function swap(doc, focusErrors) {
+      var section = sectionOf(form);
+      var fresh = section && freshSection(doc, section);
+      if (!fresh) return form;
+      var activeId = document.activeElement && document.activeElement.id;
+      section.replaceWith(fresh);
+      fresh.querySelectorAll("select").forEach(setupMenu);
+      var f = fresh.querySelector("form[data-autosave]");
+      if (f) setupAutosave(f, savedLanguage);
+      var summary = focusErrors && fresh.querySelector(".error-summary");
+      var target = summary || (activeId && document.getElementById(activeId));
+      if (target) target.focus();
+      return f || form;
+    }
+
+    function save() {
+      var mine = ++seq;
+      fetch(form.action, {
+        method: "POST",
+        body: new URLSearchParams(new FormData(form)),
+        credentials: "same-origin"
+      })
+        .then(function (r) {
+          if (!r.ok && r.status !== 422) throw new Error("HTTP " + r.status);
+          return r.text().then(function (html) { return { ok: r.ok, html: html }; });
+        })
+        .then(function (res) {
+          if (mine !== seq || !form.isConnected) return; // a newer change is being saved
+          var doc = new DOMParser().parseFromString(res.html, "text/html");
+          if (!res.ok) {
+            swap(doc, true);
+            return;
+          }
+          if (language && language.value !== savedLanguage) {
+            location.replace(form.action + "?msg=settings_saved");
+            return;
+          }
+          var f = form;
+          // Clear errors left from an earlier attempt.
+          if (sectionOf(form) && sectionOf(form).querySelector(".error-summary, .field-error")) f = swap(doc, false);
+          // The country decides the order of the food composition tables.
+          var tables = document.querySelector('section[aria-labelledby="datasets-heading"]');
+          if (tables && form.querySelector('[name="country"]')) {
+            var freshTables = freshSection(doc, tables);
+            if (freshTables) tables.replaceWith(freshTables);
+          }
+          showStatus(f, f.getAttribute("data-saved"), false);
+        })
+        .catch(function () {
+          if (mine === seq && form.isConnected) {
+            showStatus(form, t("save-error", "Could not save. Check your connection and try again."), true);
+          }
+        });
+    }
+
+    function schedule(delay) {
+      clearTimeout(timer);
+      timer = setTimeout(save, delay);
+    }
+
+    // Text fields save when left or on Enter; choices save once picked
+    // (debounced, as arrow keys on a closed list change it step by step).
+    form.addEventListener("change", function (e) {
+      schedule(e.target.type === "radio" ? 0 : AUTOSAVE_DELAY);
+    });
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      schedule(0);
+    });
   }
 
   // Destructive form posts are confirmed in an alert styled like iOS:
@@ -511,6 +864,20 @@
       e.preventDefault();
       showConfirm(f);
     });
+
+    document.querySelectorAll("form select").forEach(setupMenu);
+    document.querySelectorAll('input[type="file"][id]').forEach(setupFilePicker);
+    // Error summary links point at the field; a select's menu button
+    // stands in for it.
+    document.addEventListener("click", function (e) {
+      var a = e.target.closest && e.target.closest('a[href^="#"]');
+      var field = a && document.getElementById(a.getAttribute("href").slice(1));
+      var button = field && field.hasAttribute("data-menu") && document.getElementById(field.id + "-button");
+      if (!button) return;
+      e.preventDefault();
+      button.focus();
+    });
+    document.querySelectorAll("form[data-autosave]").forEach(function (f) { setupAutosave(f); });
 
     // Preview the appearance as soon as it is picked; saving stores it.
     document.querySelectorAll("[data-theme-picker]").forEach(function (group) {

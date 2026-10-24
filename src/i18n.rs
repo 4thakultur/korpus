@@ -1301,6 +1301,18 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Automatique suit votre appareil. Sombre utilise un noir pur, qui économise l'énergie sur les écrans OLED. Enregistré sur cet appareil uniquement.",
         "Automático sigue a su dispositivo. Oscuro usa negro puro, que ahorra energía en pantallas OLED. Se guarda solo en este dispositivo.",
     ),
+    ("Choose file", "Choisir un fichier", "Elegir archivo"),
+    (
+        "No file chosen",
+        "Aucun fichier choisi",
+        "Ningún archivo elegido",
+    ),
+    ("{0} files", "{0} fichiers", "{0} archivos"),
+    (
+        "Could not save. Check your connection and try again.",
+        "Enregistrement impossible. Vérifiez votre connexion et réessayez.",
+        "No se pudo guardar. Compruebe su conexión e inténtelo de nuevo.",
+    ),
     (
         "Save appearance",
         "Enregistrer l'apparence",

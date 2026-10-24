@@ -27,6 +27,7 @@
   --focus: #0066cc;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   --elevated: #ffffff;         /* popovers */
+  --menu-glass: rgba(255, 255, 255, 0.9);
 
   /* Liquid Glass: translucent material for floating controls. */
   --glass: rgba(255, 255, 255, 0.78);
@@ -85,6 +86,7 @@
     --focus: #0a84ff;
     --shadow: none;
     --elevated: #2c2c2e;
+    --menu-glass: rgba(37, 37, 40, 0.92);
     --glass: rgba(44, 44, 48, 0.74);
     --glass-edge: rgba(255, 255, 255, 0.1);
     --glass-highlight: rgba(255, 255, 255, 0.1);
@@ -121,6 +123,7 @@
   --focus: #0a84ff;
   --shadow: none;
   --elevated: #2c2c2e;
+  --menu-glass: rgba(37, 37, 40, 0.92);
   --glass: rgba(44, 44, 48, 0.74);
   --glass-edge: rgba(255, 255, 255, 0.1);
   --glass-highlight: rgba(255, 255, 255, 0.1);
@@ -344,6 +347,7 @@ a.row:active, button.row:active { background: var(--fill-strong); }
   border-radius: 50%; background: var(--energy); color: #fff; font-size: 0.8125rem; font-weight: 700;
 }
 .note { display: block; background: var(--tint-fill); }
+.autosave-status > * { margin: 16px 0 0; }
 .warning { display: block; background: var(--warn-fill); color: var(--label); }
 .warning > [aria-hidden="true"]:first-child { color: var(--warn-text); }
 .warning a { color: var(--tint); }
@@ -491,6 +495,62 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 .field > label { display: block; margin: 0 0 6px; font-size: 0.9375rem; font-weight: 500; }
 .amount-input input { font-family: var(--font-rounded); font-size: 1.375rem; font-weight: 600; }
 .amount-input .unit { font-size: 1.0625rem; }
+
+/* File field drawn as a row: the file name, then a tinted button (app.js). */
+.file-pick {
+  display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 7px 8px 7px 14px;
+  background: var(--fill); border-radius: var(--radius-sm);
+}
+.form-row .file-pick { margin: 0 -4px; }
+.file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--label-2); }
+.file-pick.has-file .file-name { color: var(--label); }
+.file-pick .pill { flex: none; }
+.file-pick.invalid, .file-pick:has([aria-invalid="true"]) { box-shadow: inset 0 0 0 2px var(--danger); }
+
+/* Pop-up button and menu that stand in for selects (app.js): the value in
+   secondary text with up and down chevrons, opening a floating glass menu
+   with a checkmark beside the chosen option, as in iOS. */
+.menu-button {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+  min-height: 36px; padding: 0 12px; border-radius: 999px;
+  font-weight: 400; color: var(--label); background: var(--fill);
+}
+.form-row .menu-button { margin-right: -10px; padding: 0 10px; color: var(--label-2); background: transparent; }
+.menu-button:hover { opacity: 1; background: var(--fill); }
+.menu-button:active { opacity: 1; background: var(--fill-strong); }
+.menu-button[aria-expanded="true"] { background: var(--fill); }
+.menu-button[aria-invalid="true"] { color: var(--danger); }
+.menu-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-chevrons { width: 9px; height: 15px; flex: none; }
+
+.menu {
+  position: fixed; z-index: 40; list-style: none; margin: 0; padding: 6px;
+  min-width: 220px; max-width: min(340px, calc(100vw - 16px));
+  overflow-y: auto; overscroll-behavior: contain;
+  color: var(--label); background: var(--elevated);
+  border-radius: 22px; box-shadow: var(--glass-shadow);
+  transform-origin: top right; animation: menu-in 0.18s ease-out;
+}
+.menu.up { transform-origin: bottom right; }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .menu {
+    background: var(--menu-glass);
+    -webkit-backdrop-filter: blur(30px) saturate(180%); backdrop-filter: blur(30px) saturate(180%);
+  }
+}
+.menu:focus { outline: none; }
+.menu [role="option"] {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 14px 10px 10px;
+  border-radius: 14px; cursor: pointer; line-height: 1.25;
+}
+.menu .check { width: 16px; height: 16px; flex: none; visibility: hidden; }
+.menu [aria-selected="true"] { font-weight: 600; }
+.menu [aria-selected="true"] .check { visibility: visible; }
+.menu .menu-text { min-width: 0; overflow-wrap: anywhere; }
+.menu .active { background: var(--glass-selected); }
+/* Keyboard navigation needs a stronger cue than the hover tint. */
+.menu.keyboard .active { box-shadow: inset 0 0 0 2px var(--focus); }
+@keyframes menu-in { from { opacity: 0; transform: scale(0.92); } }
 
 /* The date shown as a grey capsule that opens the calendar (app.js). */
 .js input[data-calendar] { display: none; }
@@ -835,7 +895,18 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .dataset h3 { font-size: 1.0625rem; margin: 0 0 4px; }
 .dataset p { margin: 0 0 6px; }
 .dataset details { margin-top: 8px; }
-.dataset summary { cursor: pointer; color: var(--tint); font-weight: 600; padding: 10px 0; line-height: 24px; }
+.dataset summary {
+  display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 0;
+  cursor: pointer; list-style: none; color: var(--tint); font-weight: 600; line-height: 24px;
+}
+.dataset summary::-webkit-details-marker { display: none; }
+/* A chevron that turns down when open, instead of the browser's triangle. */
+.dataset summary::after {
+  content: ""; width: 7px; height: 7px; margin-left: 2px;
+  border: solid currentColor; border-width: 0 2px 2px 0; border-radius: 1px;
+  transform: rotate(-45deg); transition: transform 0.2s ease;
+}
+.dataset details[open] > summary::after { transform: translateY(-2px) rotate(45deg); }
 .dataset form + form { margin-top: 10px; }
 .badge.ok { background: var(--tint-fill); color: var(--tint); }
 
@@ -861,6 +932,8 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
   .ring .ring-value, .mini-ring .ring-value, .chart .line { stroke: CanvasText; }
   .dot, .split-bar rect { forced-color-adjust: none; }
   .segmented input:checked + span { outline: 2px solid Highlight; }
+  .menu { border: 1px solid CanvasText; }
+  .menu .active { outline: 2px solid Highlight; outline-offset: -2px; }
 }
 @media print {
   .tab-bar, .site-footer, button, .button, .day-nav, .meal-add { display: none !important; }

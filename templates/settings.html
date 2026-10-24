@@ -6,15 +6,16 @@
 <section class="section" aria-labelledby="general-heading">
   <div class="section-head"><h2 id="general-heading">{{ lang.t("General") }}</h2></div>
   {% include "_errors.html" %}
-  <form method="post" action="/settings">
+  <form method="post" action="/settings" data-autosave data-saved="{{ lang.t("Settings saved.") }}">
     {% include "_profile_fields.html" %}
-    <button type="submit" class="primary block">{{ lang.t("Save settings") }}</button>
+    <button type="submit" class="primary block js-hidden">{{ lang.t("Save settings") }}</button>
+    <div class="autosave-status" role="status" data-autosave-status></div>
   </form>
 </section>
 
 <section class="section" aria-labelledby="appearance-heading">
   <div class="section-head"><h2 id="appearance-heading">{{ lang.t("Appearance") }}</h2></div>
-  <form method="post" action="/settings/appearance">
+  <form method="post" action="/settings/appearance" data-autosave data-saved="{{ lang.t("Appearance saved on this device.") }}">
     <div class="group">
       <fieldset class="form-row stacked" aria-describedby="appearance-hint">
         <legend class="visually-hidden">{{ lang.t("Appearance") }}</legend>
@@ -24,7 +25,8 @@
       </fieldset>
     </div>
     <p class="group-foot" id="appearance-hint">{{ lang.t("Automatic follows your device. Dark uses true black, which saves power on OLED screens. Saved on this device only.") }}</p>
-    <button type="submit" class="block">{{ lang.t("Save appearance") }}</button>
+    <button type="submit" class="block js-hidden">{{ lang.t("Save appearance") }}</button>
+    <div class="autosave-status" role="status" data-autosave-status></div>
   </form>
 </section>
 
