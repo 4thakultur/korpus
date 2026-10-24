@@ -1,6 +1,28 @@
+# Build output
 /target
+
+# Local database, backups and runtime data (never commit personal data)
 /data
-.env
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
+*.sqlite
+*.sqlite3
+*.backup
+
+# Local configuration and secrets (.env.example is the documented template)
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
