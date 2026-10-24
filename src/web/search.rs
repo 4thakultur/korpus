@@ -321,10 +321,11 @@ pub async fn page(
     let pending = search_remote && !inline_remote;
     let extra = if inline_remote { "&remote=1" } else { "" };
 
-    let title = match (ctx.meal, q.is_empty()) {
-        (Some(m), _) => m.add_food_title(lang).to_string(),
-        (None, true) => lang.t("Foods").into(),
-        (None, false) => lang.f("Search: {0}", &[&q]),
+    // The query is already visible in the search field, so the heading
+    // stays the page name rather than repeating it.
+    let title = match ctx.meal {
+        Some(m) => m.add_food_title(lang).to_string(),
+        None => lang.t("Foods").into(),
     };
     let page_view = SearchPage {
         lang,

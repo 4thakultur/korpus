@@ -1,5 +1,6 @@
 //! Korpus: a small, self-hostable calorie and macronutrient tracker.
 
+pub mod auth;
 pub mod backup;
 pub mod config;
 pub mod countries;

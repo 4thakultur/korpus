@@ -7,7 +7,7 @@ use crate::db::now_utc;
 use crate::diary::{Entry, Meal, check_amount};
 use crate::error::{AppError, AppResult};
 use crate::foods::{Food, search_text};
-use crate::goals::GoalSettings;
+use crate::goals::{Activity, Goal, GoalSettings, MIN_CUSTOM_KCAL, Sex};
 use crate::i18n::Lang;
 use crate::nutrition::{Basis, Nutrient, check_value};
 use crate::profile::Profile;
@@ -107,28 +107,86 @@ pub fn diary_csv(entries: &[Entry]) -> String {
 
 /// Writes a consistent snapshot of the database with `VACUUM INTO`, which is
 /// safe while the application keeps writing, and returns its bytes.
+///
+/// The copy holds the whole diary, so it is written inside a fresh directory
+/// only this process's user can open: the shared temporary directory is
+/// readable by every local user, and a predictable file name there could be
+/// claimed in advance.
 pub async fn sqlite_snapshot(db: &SqlitePool) -> AppResult<Vec<u8>> {
-    let name = format!(
-        "korpus-backup-{}-{}.db",
+    let dir = std::env::temp_dir().join(format!(
+        "korpus-backup-{}-{}",
         std::process::id(),
         jiff::Timestamp::now().as_nanosecond()
-    );
-    let path = std::env::temp_dir().join(name);
-    let path_s = path
-        .to_str()
-        .ok_or_else(|| AppError::Internal("temporary path is not valid UTF-8".into()))?
-        .to_string();
-    sqlx::query("VACUUM INTO ?")
-        .bind(&path_s)
-        .execute(db)
-        .await?;
-    let bytes = tokio::fs::read(&path)
-        .await
-        .map_err(|e| AppError::Internal(format!("reading backup: {e}")));
-    if let Err(e) = tokio::fs::remove_file(&path).await {
+    ));
+    private_dir(&dir).map_err(|e| AppError::Internal(format!("creating backup directory: {e}")))?;
+    let path = dir.join("korpus.db");
+    let result = async {
+        write_snapshot(db, &path).await?;
+        tokio::fs::read(&path)
+            .await
+            .map_err(|e| AppError::Internal(format!("reading backup: {e}")))
+    }
+    .await;
+    if let Err(e) = tokio::fs::remove_dir_all(&dir).await {
         tracing::warn!(error = %e, "could not remove temporary backup file");
     }
-    bytes
+    result
+}
+
+/// Writes a consistent copy of the database to `path`, which must not exist.
+/// The file is readable only by its owner: it holds the diary and the
+/// login's password hash.
+///
+/// Sessions are left out. Restoring an older backup must not bring back a
+/// login that was ended since, such as the sessions a password change logged
+/// out after a cookie was stolen.
+pub async fn write_snapshot(db: &SqlitePool, path: &std::path::Path) -> AppResult<()> {
+    use sqlx::{ConnectOptions, Connection};
+    let path_s = path
+        .to_str()
+        .ok_or_else(|| AppError::Internal("backup path is not valid UTF-8".into()))?;
+    // Created empty first (which `VACUUM INTO` accepts) so the permissions
+    // apply from the start and an existing file is never overwritten.
+    let mut file = std::fs::OpenOptions::new();
+    file.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut file, 0o600);
+    file.open(path)
+        .map_err(|e| AppError::Internal(format!("creating {path_s}: {e}")))?;
+    let result = async {
+        sqlx::query("VACUUM INTO ?")
+            .bind(path_s)
+            .execute(db)
+            .await?;
+        let mut copy = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(path)
+            .connect()
+            .await?;
+        sqlx::query("PRAGMA secure_delete = ON")
+            .execute(&mut copy)
+            .await?;
+        sqlx::query("DELETE FROM sessions")
+            .execute(&mut copy)
+            .await?;
+        copy.close().await?;
+        Ok(())
+    }
+    .await;
+    if result.is_err() {
+        // Never leave a partial copy that looks like a backup.
+        if let Err(e) = std::fs::remove_file(path) {
+            tracing::warn!(error = %e, "could not remove incomplete backup");
+        }
+    }
+    result
+}
+
+/// Creates a new directory readable only by its owner; fails if it exists.
+fn private_dir(path: &std::path::Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(path)
 }
 
 #[derive(Debug, PartialEq)]
@@ -166,6 +224,38 @@ fn check_nutrients(
     Ok(())
 }
 
+/// Text longer than `max` characters. Bounds match the manual forms (or,
+/// for values Korpus writes itself, leave generous room).
+fn too_long(s: Option<&str>, max: usize) -> bool {
+    s.is_some_and(|s| s.chars().count() > max)
+}
+
+/// Highest energy target or estimate accepted from an import.
+const MAX_IMPORTED_KCAL: f64 = 20_000.0;
+
+/// Goal settings as the goals page could have saved them. An imported file
+/// must not install a target the page would refuse, such as a starvation
+/// diet.
+fn valid_goals(g: &GoalSettings) -> bool {
+    let in_range = |v: Option<f64>, min: f64, max: f64| v.is_none_or(|v| (min..=max).contains(&v));
+    let known = |v: Option<&str>, parse: fn(&str) -> bool| v.is_none_or(parse);
+    in_range(g.daily_kcal_target, MIN_CUSTOM_KCAL, MAX_IMPORTED_KCAL)
+        && in_range(g.maintenance_kcal, 1.0, MAX_IMPORTED_KCAL)
+        && in_range(g.height_cm, 100.0, 250.0)
+        && in_range(g.weight_kg, crate::weight::MIN_KG, crate::weight::MAX_KG)
+        && [g.protein_goal_g, g.carbs_goal_g, g.fat_goal_g]
+            .into_iter()
+            .all(|v| in_range(v, 0.0, 1000.0))
+        && known(g.target_source.as_deref(), |s| {
+            matches!(s, "estimate" | "custom")
+        })
+        && Goal::parse(&g.goal).is_some()
+        && known(g.sex.as_deref(), |s| Sex::parse(s).is_some())
+        && known(g.activity.as_deref(), |s| Activity::parse(s).is_some())
+        && known(g.birth_date.as_deref(), |s| parse_date(s).is_some())
+        && !too_long(Some(&g.updated_at), 32)
+}
+
 fn validate(export: &Export, lang: Lang) -> AppResult<()> {
     if export.format != EXPORT_FORMAT {
         return Err(invalid(lang, lang.t("this is not a Korpus export")));
@@ -201,6 +291,23 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
                 return Err(invalid(lang, at(food(), lang.t("name"))));
             }
         }
+        if too_long(f.brand.as_deref(), 120)
+            || too_long(f.barcode.as_deref(), 32)
+            || too_long(f.serving_label.as_deref(), 60)
+            || too_long(f.notes.as_deref(), 4000)
+            || too_long(Some(&f.source), 32)
+            || too_long(f.provider_id.as_deref(), 64)
+            || [
+                f.source_updated_at.as_deref(),
+                f.fetched_at.as_deref(),
+                Some(&f.created_at),
+                Some(&f.updated_at),
+            ]
+            .into_iter()
+            .any(|t| too_long(t, 32))
+        {
+            return Err(invalid(lang, at(food(), lang.t("text too long"))));
+        }
         let n = f.nutrients();
         check_nutrients(basis, Nutrient::ALL.map(|k| (k, n.get(k))), &food(), lang)?;
     }
@@ -211,6 +318,12 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
         let basis =
             Basis::parse(&e.unit).ok_or_else(|| invalid(lang, at(ctx.clone(), lang.t("unit"))))?;
         check_amount(e.amount, lang).map_err(|m| invalid(lang, at(ctx.clone(), m)))?;
+        if e.food_name.trim().is_empty() || too_long(Some(&e.food_name), 200) {
+            return Err(invalid(lang, at(ctx, lang.t("name"))));
+        }
+        if too_long(e.food_brand.as_deref(), 120) || too_long(Some(&e.source), 32) {
+            return Err(invalid(lang, at(ctx, lang.t("text too long"))));
+        }
         let n = e.per_100();
         check_nutrients(basis, Nutrient::ALL.map(|k| (k, n.get(k))), &ctx, lang)?;
     }
@@ -218,6 +331,12 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
         let ctx = || lang.f("weight {0}", &[&w.id]);
         parse_date(&w.entry_date).ok_or_else(|| invalid(lang, at(ctx(), lang.t("date"))))?;
         check_weight_kg(w.weight_kg, lang).map_err(|m| invalid(lang, at(ctx(), m)))?;
+        if too_long(w.note.as_deref(), 500) {
+            return Err(invalid(lang, at(ctx(), lang.t("text too long"))));
+        }
+    }
+    if !valid_goals(&export.goals) {
+        return Err(invalid(lang, lang.t("goal settings")));
     }
     Ok(())
 }
@@ -397,6 +516,91 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn snapshots_leave_out_sessions() {
+        // A file, not an in-memory database: `VACUUM INTO` from memory
+        // writes the copy to memory too.
+        let dir = std::env::temp_dir().join(format!(
+            "korpus-snapshot-test-{}-{}",
+            std::process::id(),
+            jiff::Timestamp::now().as_nanosecond()
+        ));
+        private_dir(&dir).unwrap();
+        let db = crate::db::connect(&format!("sqlite://{}", dir.join("live.db").display()))
+            .await
+            .unwrap();
+        crate::auth::create_account(&db, "me", "correct horse battery")
+            .await
+            .unwrap();
+        crate::auth::create_session(&db, false).await.unwrap();
+        let path = dir.join("copy.db");
+        write_snapshot(&db, &path).await.unwrap();
+        assert!(
+            write_snapshot(&db, &path).await.is_err(),
+            "never overwrites a file"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o077, 0, "only the owner can read it");
+        }
+        let copy = crate::db::connect(&format!("sqlite://{}", path.display()))
+            .await
+            .unwrap();
+        let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions")
+            .fetch_one(&copy)
+            .await
+            .unwrap();
+        let accounts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM account")
+            .fetch_one(&copy)
+            .await
+            .unwrap();
+        copy.close().await;
+        db.close().await;
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!((sessions, accounts), (0, 1));
+    }
+
+    #[test]
+    fn imported_goals_must_be_what_the_goals_page_allows() {
+        let ok = GoalSettings {
+            goal: "maintain".into(),
+            daily_kcal_target: Some(2000.0),
+            target_source: Some("custom".into()),
+            ..Default::default()
+        };
+        assert!(valid_goals(&ok));
+        assert!(valid_goals(&GoalSettings {
+            goal: "lose".into(),
+            ..Default::default()
+        }));
+        for bad in [
+            GoalSettings {
+                daily_kcal_target: Some(300.0),
+                ..ok.clone()
+            },
+            GoalSettings {
+                goal: "starve".into(),
+                ..ok.clone()
+            },
+            GoalSettings {
+                birth_date: Some("yesterday".into()),
+                ..ok.clone()
+            },
+            GoalSettings {
+                height_cm: Some(1.0),
+                ..ok.clone()
+            },
+            GoalSettings {
+                protein_goal_g: Some(-1.0),
+                ..ok.clone()
+            },
+        ] {
+            assert!(!valid_goals(&bad), "{bad:?}");
+        }
+    }
 
     #[test]
     fn csv_quotes_and_guards_formulas() {

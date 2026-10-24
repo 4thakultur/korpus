@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="welcome">
+  <span class="app-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2.2 1.2-3.5 3.8-3.5 7v3H17"/></svg></span>
+  <h1>{{ lang.t("Create your account") }}</h1>
+  <p>{{ lang.t("Korpus is protected by a login. Choose a username and password for this installation.") }}</p>
+</header>
+{% include "_errors.html" %}
+<form method="post" action="/account/setup" novalidate>
+  <div class="group float-group">
+    <div class="float-field">
+      <input id="username" name="username" placeholder=" " type="text" value="{{ username }}" required autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64"{% if username.is_empty() %} autofocus{% endif %} {% if errors.has("username") %}aria-invalid="true" aria-describedby="username-error"{% endif %}>
+      <label for="username">{{ lang.t("Username") }}</label>
+      {% if let Some(e) = errors.get("username") %}<p class="field-error" id="username-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="float-field">
+      <input id="password" name="password" placeholder=" " type="password" required autocomplete="new-password" minlength="{{ min_password }}" aria-describedby="password-hint{% if errors.has("password") %} password-error{% endif %}" {% if errors.has("password") %}aria-invalid="true"{% endif %}>
+      <label for="password">{{ lang.t("Password") }}</label>
+      {% if let Some(e) = errors.get("password") %}<p class="field-error" id="password-error">{{ e }}</p>{% endif %}
+    </div>
+    <div class="float-field">
+      <input id="password_confirm" name="password_confirm" placeholder=" " type="password" required autocomplete="new-password" {% if errors.has("password_confirm") %}aria-invalid="true" aria-describedby="password_confirm-error"{% endif %}>
+      <label for="password_confirm">{{ lang.t("Confirm password") }}</label>
+      {% if let Some(e) = errors.get("password_confirm") %}<p class="field-error" id="password_confirm-error">{{ e }}</p>{% endif %}
+    </div>
+  </div>
+  <p class="group-foot" id="password-hint">{{ lang.f1("At least {0} characters. A passphrase of several words is easy to remember and hard to guess.", min_password) }}</p>
+  <div class="code-field">
+    <label for="setup_code">{{ lang.t("Setup code") }}</label>
+    <input type="text" id="setup_code" name="setup_code" required placeholder="XXXXX-XXXXX" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20" aria-describedby="setup_code-hint{% if errors.has("setup_code") %} setup_code-error{% endif %}" {% if errors.has("setup_code") %}aria-invalid="true"{% endif %}>
+    {% if let Some(e) = errors.get("setup_code") %}<p class="field-error" id="setup_code-error">{{ e }}</p>{% endif %}
+  </div>
+  <p class="group-foot" id="setup_code-hint">{{ lang.t("Printed in the server log when Korpus starts. It proves that you are the one running this server. For example:") }} <code>docker compose logs korpus</code></p>
+  <button type="submit" class="primary block">{{ lang.t("Create account") }}</button>
+</form>
+{% endblock %}

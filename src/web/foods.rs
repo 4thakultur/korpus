@@ -182,7 +182,9 @@ pub async fn detail_page(
     let source_url = food
         .provider_id
         .as_ref()
-        .filter(|_| is_off)
+        // Only a well-formed barcode goes into the link: imported backups
+        // can carry any identifier.
+        .filter(|id| is_off && foods::is_valid_barcode(id))
         .map(|id| format!("https://world.openfoodfacts.org/product/{id}"));
     let attribution = if is_off {
         Some(

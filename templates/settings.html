@@ -13,6 +13,18 @@
   </form>
 </section>
 
+<section class="section" aria-labelledby="account-heading">
+  <div class="section-head"><h2 id="account-heading">{{ lang.t("Account") }}</h2></div>
+  <div class="list">
+    <div class="row"><span class="row-main row-title">{{ lang.t("Username") }}</span><span class="row-value" translate="no">{{ username }}</span></div>
+    <a class="row" href="/settings/password"><span class="row-main row-title">{{ lang.t("Change password") }}</span>{% include "_chevron.html" %}</a>
+    <a class="row" href="/settings/2fa"><span class="row-main row-title">{{ lang.t("Two-factor authentication") }}</span><span class="row-value">{% if totp_enabled %}{{ lang.t("On") }}{% else %}{{ lang.t("Off") }}{% endif %}</span>{% include "_chevron.html" %}</a>
+  </div>
+  <form method="post" action="/logout" class="logout">
+    <button type="submit" class="danger block">{{ lang.t("Log out") }}</button>
+  </form>
+</section>
+
 <section class="section" aria-labelledby="appearance-heading">
   <div class="section-head"><h2 id="appearance-heading">{{ lang.t("Appearance") }}</h2></div>
   <form method="post" action="/settings/appearance" data-autosave data-saved="{{ lang.t("Appearance saved on this device.") }}">

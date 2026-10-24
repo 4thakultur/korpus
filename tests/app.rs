@@ -13,7 +13,7 @@ use korpus::nutrition::{Basis, Nutrients};
 use korpus::providers::{
     BoxFuture, FoodProvider, ProviderError, ProviderFood, ProviderPage, Providers,
 };
-use korpus::web::{AppState, router};
+use korpus::web::{AppState, Guard, router};
 use sqlx::SqlitePool;
 use tower::ServiceExt;
 
@@ -132,7 +132,14 @@ struct App {
     router: Router,
     db: SqlitePool,
     provider: Arc<FakeProvider>,
+    auth: Arc<Guard>,
+    /// `Cookie` value of a logged-in session, sent with every request
+    /// unless the test clears it.
+    session: Option<String>,
 }
+
+const USERNAME: &str = "tester";
+const PASSWORD: &str = "correct horse battery";
 
 async fn app() -> App {
     let db = korpus::db::connect_memory().await.unwrap();
@@ -141,36 +148,67 @@ async fn app() -> App {
         last_lang: Mutex::new(None),
     });
     let config = Config::from_lookup(|_| None).unwrap();
+    let auth = Arc::new(Guard::default());
     let router = router(AppState {
         db: db.clone(),
         providers: Arc::new(Providers::new(vec![provider.clone()])),
         config: Arc::new(config),
+        auth: auth.clone(),
     });
+    korpus::auth::create_account(&db, USERNAME, PASSWORD)
+        .await
+        .unwrap();
+    let token = korpus::auth::create_session(&db, false).await.unwrap();
     App {
         router,
         db,
         provider,
+        auth,
+        session: Some(format!("korpus_session={token}")),
     }
+}
+
+/// An installation nobody has logged into yet.
+async fn app_without_login() -> App {
+    let a = app().await;
+    korpus::auth::reset(&a.db).await.unwrap();
+    a.as_visitor(None)
 }
 
 struct Resp {
     status: StatusCode,
     location: Option<String>,
+    set_cookie: Vec<String>,
     body: String,
 }
 
 impl App {
-    async fn send(&self, req: Request<Body>) -> Resp {
+    async fn send(&self, mut req: Request<Body>) -> Resp {
+        if let Some(session) = &self.session {
+            let cookie = match req.headers().get(header::COOKIE) {
+                Some(c) => format!("{}; {session}", c.to_str().unwrap()),
+                None => session.clone(),
+            };
+            req.headers_mut()
+                .insert(header::COOKIE, cookie.parse().unwrap());
+        }
         let res = self.router.clone().oneshot(req).await.unwrap();
         let status = res.status();
         let location = res
             .headers()
             .get(header::LOCATION)
             .map(|v| v.to_str().unwrap().to_string());
+        let set_cookie = res
+            .headers()
+            .get_all(header::SET_COOKIE)
+            .iter()
+            .map(|v| v.to_str().unwrap().to_string())
+            .collect();
         let bytes = to_bytes(res.into_body(), 10 * 1024 * 1024).await.unwrap();
         Resp {
             status,
             location,
+            set_cookie,
             body: String::from_utf8_lossy(&bytes).into_owned(),
         }
     }
@@ -310,6 +348,11 @@ async fn security_headers_present() {
     assert!(h.get(header::CONTENT_SECURITY_POLICY).is_some());
     assert_eq!(h.get(header::X_CONTENT_TYPE_OPTIONS).unwrap(), "nosniff");
     assert_eq!(h.get(header::X_FRAME_OPTIONS).unwrap(), "DENY");
+    assert_eq!(h.get("cross-origin-opener-policy").unwrap(), "same-origin");
+    assert_eq!(
+        h.get("cross-origin-resource-policy").unwrap(),
+        "same-origin"
+    );
 }
 
 #[tokio::test]
@@ -341,6 +384,96 @@ async fn cross_site_posts_are_rejected() {
 
     let p = korpus::profile::load(&a.db).await.unwrap();
     assert!(!p.setup_complete, "rejected requests must not change data");
+}
+
+/// DNS rebinding: a page on evil.example whose name now resolves to this
+/// server is "same origin" for the browser, so only the host name gives it
+/// away.
+#[tokio::test]
+async fn requests_for_unknown_host_names_are_refused() {
+    let a = app().await;
+    a.setup().await;
+    let req = |host: &str, path: &str| {
+        Request::get(path)
+            .header(header::HOST, host)
+            .body(Body::empty())
+            .unwrap()
+    };
+    for path in ["/diary", "/settings/export.json", "/settings/backup.sqlite"] {
+        let r = a.send(req("evil.example:9874", path)).await;
+        assert_eq!(r.status, StatusCode::MISDIRECTED_REQUEST, "{path}");
+        assert!(r.body.contains("KORPUS_ALLOWED_HOSTS"));
+    }
+    let rebound_post = a
+        .send(
+            Request::post("/weight")
+                .header(header::HOST, "evil.example")
+                .header(header::ORIGIN, "http://evil.example")
+                .header("sec-fetch-site", "same-origin")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from("date=2026-01-01&weight=70"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(rebound_post.status, StatusCode::MISDIRECTED_REQUEST);
+    assert!(korpus::weight::latest(&a.db).await.unwrap().is_none());
+
+    // A forged forwarded host does not get past the check either.
+    let forwarded = a
+        .send(
+            Request::get("/diary")
+                .header(header::HOST, "localhost")
+                .header("x-forwarded-host", "evil.example")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(forwarded.status, StatusCode::MISDIRECTED_REQUEST);
+
+    for host in [
+        "localhost:9874",
+        "127.0.0.1:9874",
+        "192.168.1.20",
+        "[::1]:9874",
+    ] {
+        assert_eq!(
+            a.send(req(host, "/diary")).await.status,
+            StatusCode::OK,
+            "{host}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn configured_host_names_are_answered() {
+    let db = korpus::db::connect_memory().await.unwrap();
+    let config =
+        Config::from_lookup(|k| (k == "KORPUS_ALLOWED_HOSTS").then(|| "korpus.lan".into()))
+            .unwrap();
+    let router = router(AppState {
+        db,
+        providers: Arc::new(Providers::new(vec![])),
+        config: Arc::new(config),
+        auth: Default::default(),
+    });
+    let status = |host: &'static str| {
+        let router = router.clone();
+        async move {
+            router
+                .oneshot(
+                    Request::get("/healthz")
+                        .header(header::HOST, host)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap()
+                .status()
+        }
+    };
+    assert_eq!(status("korpus.lan:9874").await, StatusCode::OK);
+    assert_eq!(status("Korpus.LAN").await, StatusCode::OK);
+    assert_eq!(status("other.lan").await, StatusCode::MISDIRECTED_REQUEST);
 }
 
 #[tokio::test]
@@ -755,6 +888,7 @@ async fn export_import_round_trip_and_backup() {
 
     let export = a.get("/settings/export.json").await;
     assert_eq!(export.status, StatusCode::OK);
+
     let csv = a.get("/settings/diary.csv").await;
     assert!(csv.body.starts_with("date,meal,food"));
     assert!(csv.body.contains("2026-05-01,lunch,Rolled oats"));
@@ -786,6 +920,36 @@ async fn export_import_round_trip_and_backup() {
     assert_eq!(count, 1);
 }
 
+/// `VACUUM INTO` from an in-memory database writes to memory, so the
+/// backup is tested against a database file.
+#[tokio::test]
+async fn backup_is_a_consistent_sqlite_file_and_leaves_nothing_behind() {
+    let dir = std::env::temp_dir().join(format!("korpus-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = korpus::db::connect(&format!("sqlite://{}/korpus.db", dir.display()))
+        .await
+        .unwrap();
+    korpus::weight::record(&db, jiff::civil::date(2026, 5, 1), 72.0, None)
+        .await
+        .unwrap();
+    let leftovers = || {
+        std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(&format!("korpus-backup-{}-", std::process::id()))
+            })
+            .count()
+    };
+    let bytes = korpus::backup::sqlite_snapshot(&db).await.unwrap();
+    assert!(bytes.starts_with(b"SQLite format 3\0"));
+    assert_eq!(leftovers(), 0, "the temporary copy is removed");
+    db.close().await;
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 #[tokio::test]
 async fn invalid_import_is_rejected_atomically() {
     let a = app().await;
@@ -809,6 +973,22 @@ async fn invalid_import_is_rejected_atomically() {
         .await
         .unwrap();
     assert_eq!(foods, 0);
+
+    // A file from elsewhere cannot install a target the goals page refuses,
+    // nor oversized text.
+    let mut export = korpus::backup::export(&a.db).await.unwrap();
+    export.goals.daily_kcal_target = Some(400.0);
+    let err = korpus::backup::import(&b.db, &export, Lang::En)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("goal settings"), "{err}");
+    let mut export = korpus::backup::export(&a.db).await.unwrap();
+    export.foods[0].notes = Some("x".repeat(10_000));
+    assert!(
+        korpus::backup::import(&b.db, &export, Lang::En)
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -1129,9 +1309,7 @@ async fn appearance_is_stored_per_device_in_a_cookie() {
     assert!(diary.body.contains("content=\"light dark\""));
 
     let res = a
-        .router
-        .clone()
-        .oneshot(
+        .send(
             Request::post("/settings/appearance")
                 .header(header::HOST, "localhost")
                 .header(header::ORIGIN, "http://localhost")
@@ -1139,10 +1317,9 @@ async fn appearance_is_stored_per_device_in_a_cookie() {
                 .body(Body::from("theme=dark"))
                 .unwrap(),
         )
-        .await
-        .unwrap();
-    assert_eq!(res.status(), StatusCode::SEE_OTHER);
-    let cookie = res.headers()[header::SET_COOKIE].to_str().unwrap();
+        .await;
+    assert_eq!(res.status, StatusCode::SEE_OTHER);
+    let cookie = res.set_cookie[0].as_str();
     assert!(cookie.starts_with("korpus_theme=dark;"), "{cookie}");
     assert!(cookie.contains("HttpOnly") && cookie.contains("SameSite=Lax"));
 
@@ -1531,4 +1708,414 @@ async fn bundled_table_can_be_installed_and_search_says_when_none_is() {
         StatusCode::NOT_FOUND,
         "only bundled tables"
     );
+}
+
+// --- Login ---------------------------------------------------------------------
+
+/// The `name=value` part of the session cookie set by a response.
+fn session_cookie(r: &Resp) -> String {
+    r.set_cookie
+        .iter()
+        .find(|c| c.starts_with("korpus_session="))
+        .and_then(|c| c.split(';').next())
+        .expect("session cookie")
+        .to_string()
+}
+
+fn current_code(secret: &str) -> String {
+    let step = jiff::Timestamp::now().as_second() / 30;
+    format!(
+        "{:06}",
+        korpus::auth::totp_code(&korpus::auth::base32_decode(secret).unwrap(), step)
+    )
+}
+
+impl App {
+    /// The same installation seen from another browser.
+    fn as_visitor(&self, session: Option<String>) -> App {
+        App {
+            router: self.router.clone(),
+            db: self.db.clone(),
+            provider: self.provider.clone(),
+            auth: self.auth.clone(),
+            session,
+        }
+    }
+
+    async fn login(&self, username: &str, password: &str, next: &str) -> Resp {
+        self.post(
+            "/login",
+            &format!(
+                "username={username}&password={}&next={next}",
+                password.replace(' ', "+")
+            ),
+        )
+        .await
+    }
+}
+
+#[tokio::test]
+async fn every_page_requires_a_login() {
+    let a = app().await;
+    a.setup().await;
+    a.post("/weight", "date=2026-01-01&weight=70").await;
+    let visitor = a.as_visitor(None);
+
+    let r = visitor.get("/weight").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(r.location.as_deref(), Some("/login?next=%2Fweight"));
+    for path in [
+        "/diary",
+        "/settings/export.json",
+        "/settings/backup.sqlite",
+        "/nope",
+    ] {
+        let r = visitor.get(path).await;
+        assert_eq!(r.status, StatusCode::SEE_OTHER, "{path}");
+        assert!(r.location.unwrap().starts_with("/login"), "{path}");
+        assert!(!r.body.contains("70"), "no data leaks: {path}");
+    }
+    let fragment = visitor
+        .send(
+            Request::get("/search/remote?q=oats")
+                .header(header::HOST, "localhost")
+                .header("x-requested-with", "fetch")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(fragment.status, StatusCode::UNAUTHORIZED);
+
+    let r = visitor.post("/weight", "date=2026-01-02&weight=99").await;
+    assert_eq!(r.location.as_deref(), Some("/login"));
+    let weights: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM weight_entries")
+        .fetch_one(&visitor.db)
+        .await
+        .unwrap();
+    assert_eq!(weights, 1, "a logged-out request changes nothing");
+
+    // Public: login pages, assets and health checks.
+    assert_eq!(visitor.get("/login").await.status, StatusCode::OK);
+    assert_eq!(visitor.get("/healthz").await.status, StatusCode::OK);
+    assert_eq!(visitor.get("/static/app.css").await.status, StatusCode::OK);
+    // A forged or unknown cookie is no session.
+    let forged = visitor.as_visitor(Some(format!("korpus_session={}", "a".repeat(64))));
+    assert_eq!(forged.get("/diary").await.status, StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn the_account_is_created_with_the_setup_code_from_the_log() {
+    let a = app_without_login().await;
+    let r = a.get("/diary").await;
+    assert_eq!(r.location.as_deref(), Some("/account/setup"));
+    assert_eq!(
+        a.get("/login").await.location.as_deref(),
+        Some("/account/setup")
+    );
+    let page = a.get("/account/setup").await;
+    assert_eq!(page.status, StatusCode::OK);
+    let code = a.auth.setup_code().unwrap();
+
+    let form = |code: &str, password: &str, confirm: &str| {
+        format!(
+            "username=me&password={}&password_confirm={}&setup_code={code}",
+            password.replace(' ', "+"),
+            confirm.replace(' ', "+")
+        )
+    };
+    let wrong = a
+        .post("/account/setup", &form("WRONG-CODE1", PASSWORD, PASSWORD))
+        .await;
+    assert_eq!(wrong.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(wrong.body.contains("setup code is incorrect"));
+    let short = a
+        .post("/account/setup", &form(&code, "short", "short"))
+        .await;
+    assert!(short.body.contains("at least 10 characters"));
+    let mismatch = a
+        .post("/account/setup", &form(&code, PASSWORD, "something else"))
+        .await;
+    assert!(mismatch.body.contains("do not match"));
+    assert!(!korpus::auth::has_account(&a.db).await.unwrap());
+
+    let created = a
+        .post("/account/setup", &form(&code, PASSWORD, PASSWORD))
+        .await;
+    assert_eq!(created.status, StatusCode::SEE_OTHER);
+    let cookie = &created.set_cookie[0];
+    assert!(
+        cookie.contains("HttpOnly") && cookie.contains("SameSite=Lax"),
+        "{cookie}"
+    );
+    assert!(!cookie.contains("Secure"), "plain HTTP behind no proxy");
+    let me = a.as_visitor(Some(session_cookie(&created)));
+    // Logged in, the profile set-up comes next.
+    assert_eq!(me.get("/diary").await.location.as_deref(), Some("/setup"));
+
+    // The code is spent; the page now sends visitors to the login.
+    let again = me
+        .as_visitor(None)
+        .post("/account/setup", &form(&code, PASSWORD, PASSWORD))
+        .await;
+    assert_eq!(again.location.as_deref(), Some("/login"));
+    assert_eq!(
+        korpus::auth::account(&me.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .username,
+        "me"
+    );
+}
+
+#[tokio::test]
+async fn login_logout_and_attempt_limits() {
+    let a = app().await;
+    a.setup().await;
+    let visitor = a.as_visitor(None);
+
+    let wrong = visitor.login(USERNAME, "wrong password", "").await;
+    assert_eq!(wrong.status, StatusCode::UNAUTHORIZED);
+    assert!(wrong.body.contains("username or password is incorrect"));
+    let unknown = visitor.login("someone", PASSWORD, "").await;
+    assert_eq!(unknown.status, StatusCode::UNAUTHORIZED);
+    assert!(unknown.body.contains("username or password is incorrect"));
+
+    let ok = visitor.login("TESTER", PASSWORD, "%2Fweight").await;
+    assert_eq!(ok.status, StatusCode::SEE_OTHER);
+    assert_eq!(ok.location.as_deref(), Some("/weight"));
+    let me = visitor.as_visitor(Some(session_cookie(&ok)));
+    assert_eq!(me.get("/weight").await.status, StatusCode::OK);
+    // Only local paths are followed after logging in.
+    let me2 = me.as_visitor(None);
+    let evil = me2.login(USERNAME, PASSWORD, "%2F%2Fevil.example").await;
+    assert_eq!(evil.location.as_deref(), Some("/"));
+
+    // Behind an HTTPS proxy, the cookie is Secure.
+    let https = me2
+        .send(
+            Request::post("/login")
+                .header(header::HOST, "localhost")
+                .header(header::ORIGIN, "http://localhost")
+                .header("x-forwarded-proto", "https")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "username={USERNAME}&password={}",
+                    PASSWORD.replace(' ', "+")
+                )))
+                .unwrap(),
+        )
+        .await;
+    assert!(https.set_cookie[0].contains("; Secure"));
+
+    let me = me2.as_visitor(Some(session_cookie(&ok)));
+    let out = me.post("/logout", "").await;
+    assert_eq!(out.location.as_deref(), Some("/login"));
+    assert!(out.set_cookie[0].contains("Max-Age=0"));
+    assert_eq!(
+        me.get("/weight").await.status,
+        StatusCode::SEE_OTHER,
+        "session ended"
+    );
+
+    // After ten failures even the right password must wait. (The login
+    // above cleared the earlier ones.)
+    let visitor = me.as_visitor(None);
+    for _ in 0..10 {
+        visitor.login(USERNAME, "wrong password", "").await;
+    }
+    let blocked = visitor.login(USERNAME, PASSWORD, "").await;
+    assert_eq!(blocked.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(blocked.body.contains("Too many failed attempts"));
+}
+
+#[tokio::test]
+async fn password_change_logs_out_other_devices() {
+    let a = app().await;
+    a.setup().await;
+    let other = a.as_visitor(a_session(&a).await);
+
+    let wrong = a
+        .post(
+            "/settings/password",
+            "current=nope&password=new+password+42&password_confirm=new+password+42",
+        )
+        .await;
+    assert_eq!(wrong.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(wrong.body.contains("current password is incorrect"));
+    let ok = a
+        .post(
+            "/settings/password",
+            "current=correct+horse+battery&password=new+password+42&password_confirm=new+password+42",
+        )
+        .await;
+    assert_eq!(
+        ok.location.as_deref(),
+        Some("/settings?msg=password_changed#account-heading")
+    );
+    assert_eq!(
+        a.get("/settings").await.status,
+        StatusCode::OK,
+        "this device stays"
+    );
+    let second = a.as_visitor(other.session.clone());
+    assert_eq!(second.get("/settings").await.status, StatusCode::SEE_OTHER);
+    let visitor = second.as_visitor(None);
+    assert_eq!(
+        visitor.login(USERNAME, PASSWORD, "").await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        visitor.login(USERNAME, "new password 42", "").await.status,
+        StatusCode::SEE_OTHER
+    );
+}
+
+/// A second, independent session cookie.
+async fn a_session(a: &App) -> Option<String> {
+    let token = korpus::auth::create_session(&a.db, false).await.unwrap();
+    Some(format!("korpus_session={token}"))
+}
+
+#[tokio::test]
+async fn two_factor_login_with_an_authenticator_app() {
+    let a = app().await;
+    a.setup().await;
+    let other = a.as_visitor(a_session(&a).await);
+
+    // A session alone does not reveal a secret: the password comes first.
+    let page = other.get("/settings/2fa").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(!page.body.contains("<svg class=\"qr\""));
+    assert!(page.body.contains(r#"action="/settings/2fa/start""#));
+    let wrong = other.post("/settings/2fa/start", "current=nope").await;
+    assert_eq!(wrong.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(!wrong.body.contains("<svg class=\"qr\""));
+    let abandoned = other
+        .post("/settings/2fa/start", "current=correct+horse+battery")
+        .await;
+    let page = other
+        .post("/settings/2fa/start", "current=correct+horse+battery")
+        .await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("<svg class=\"qr\" role=\"img\""));
+    let secret: String = sqlx::query_scalar("SELECT totp_pending_secret FROM account")
+        .fetch_one(&other.db)
+        .await
+        .unwrap();
+    assert!(
+        page.body.contains(&secret[..4]),
+        "key shown for manual entry"
+    );
+    assert!(
+        !abandoned.body.contains(&secret[..8]),
+        "starting again makes a new secret"
+    );
+    assert!(
+        other
+            .get("/settings")
+            .await
+            .body
+            .contains(r#"<span class="row-value">Off</span>"#)
+    );
+
+    let bad = other.post("/settings/2fa", "code=12345").await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        !bad.body.contains(&secret[..4]) && !bad.body.contains("<svg class=\"qr\""),
+        "a wrong code does not show the secret again"
+    );
+    let code = current_code(&secret);
+    let on = other.post("/settings/2fa", &format!("code={code}")).await;
+    assert_eq!(
+        on.location.as_deref(),
+        Some("/settings?msg=twofa_enabled#account-heading")
+    );
+    let settings = other.get("/settings").await.body;
+    assert!(
+        settings.contains(r#"<span class="row-value">On</span>"#),
+        "{settings}"
+    );
+    assert_eq!(
+        a.get("/diary").await.status,
+        StatusCode::SEE_OTHER,
+        "other device logged out"
+    );
+
+    // Logging in now takes the password, then a code.
+    let visitor = a.as_visitor(None);
+    let step1 = visitor.login(USERNAME, PASSWORD, "%2Fweight").await;
+    assert_eq!(
+        step1.location.as_deref(),
+        Some("/login/code?next=%2Fweight")
+    );
+    assert!(step1.set_cookie[0].contains("Max-Age=300"));
+    let pending = visitor.as_visitor(Some(session_cookie(&step1)));
+    // The password alone opens nothing.
+    assert_eq!(
+        pending.get("/diary").await.location.as_deref(),
+        Some("/login/code")
+    );
+    assert_eq!(pending.get("/login/code").await.status, StatusCode::OK);
+    // The code that turned the feature on cannot be used again.
+    let replay = pending
+        .post("/login/code", &format!("code={code}&next=%2Fweight"))
+        .await;
+    assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
+    assert!(replay.body.contains("incorrect or has expired"));
+
+    // The next time step's code is accepted (clocks may differ by one step).
+    let next_step = jiff::Timestamp::now().as_second() / 30 + 1;
+    let next_code = format!(
+        "{:06}",
+        korpus::auth::totp_code(&korpus::auth::base32_decode(&secret).unwrap(), next_step)
+    );
+    let done = pending
+        .post("/login/code", &format!("code={next_code}&next=%2Fweight"))
+        .await;
+    assert_eq!(done.location.as_deref(), Some("/weight"));
+    let me = pending.as_visitor(Some(session_cookie(&done)));
+    assert_eq!(me.get("/weight").await.status, StatusCode::OK);
+    assert_ne!(me.session, pending.session, "a new session after the code");
+    assert_eq!(pending.get("/diary").await.status, StatusCode::SEE_OTHER);
+
+    // Turning it off needs the password.
+    let wrong = me.post("/settings/2fa/disable", "current=nope").await;
+    assert_eq!(wrong.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let off = me
+        .post("/settings/2fa/disable", "current=correct+horse+battery")
+        .await;
+    assert_eq!(
+        off.location.as_deref(),
+        Some("/settings?msg=twofa_disabled#account-heading")
+    );
+    let visitor = me.as_visitor(None);
+    assert_eq!(
+        visitor
+            .login(USERNAME, PASSWORD, "")
+            .await
+            .location
+            .as_deref(),
+        Some("/")
+    );
+}
+
+#[tokio::test]
+async fn guesses_sent_at_once_are_limited_too() {
+    let a = app().await;
+    let visitor = Arc::new(a.as_visitor(None));
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..40 {
+        let v = visitor.clone();
+        tasks.spawn(async move { v.login(USERNAME, "wrong password", "").await.status });
+    }
+    let mut judged = 0;
+    while let Some(status) = tasks.join_next().await {
+        match status.unwrap() {
+            StatusCode::UNAUTHORIZED => judged += 1,
+            StatusCode::TOO_MANY_REQUESTS => {}
+            other => panic!("{other}"),
+        }
+    }
+    assert_eq!(judged, 10, "only ten guesses were checked");
 }

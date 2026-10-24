@@ -20,6 +20,19 @@
     return isFinite(v) ? v : null;
   }
 
+  // When the session has ended (logged out on another device, expired),
+  // fetches end on the login page. Go there instead of treating the login
+  // page as a result, or a change as saved.
+  var LOGIN_PATHS = ["/login", "/login/code", "/account/setup"];
+  function checkLogin(r) {
+    var path = r.redirected ? new URL(r.url).pathname : "";
+    if (r.status === 401 || LOGIN_PATHS.indexOf(path) !== -1) {
+      location.assign("/login?next=" + encodeURIComponent(location.pathname + location.search));
+      throw new Error("login required");
+    }
+    return r;
+  }
+
   // Only the latest external search may update the page.
   var remoteRequest = null;
 
@@ -54,6 +67,7 @@
       credentials: "same-origin",
       signal: controller ? controller.signal : undefined
     })
+      .then(checkLogin)
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.text();
@@ -117,6 +131,7 @@
         var url = "/search?" + params.toString();
         var mine = ++seq;
         fetch(url, { credentials: "same-origin" })
+          .then(checkLogin)
           .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
           .then(function (html) {
             if (mine !== seq) return; // a newer request is in flight
@@ -755,6 +770,7 @@
         body: new URLSearchParams(new FormData(form)),
         credentials: "same-origin"
       })
+        .then(checkLogin)
         .then(function (r) {
           if (!r.ok && r.status !== 422) throw new Error("HTTP " + r.status);
           return r.text().then(function (html) { return { ok: r.ok, html: html }; });

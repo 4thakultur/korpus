@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use korpus::config::Config;
 use korpus::providers::Providers;
-use korpus::web::{AppState, router};
+use korpus::web::{AppState, Guard, router};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -20,6 +20,26 @@ async fn main() -> ExitCode {
                 .unwrap_or_else(|_| EnvFilter::new("korpus=info,tower_http=warn")),
         )
         .init();
+
+    if args.first().map(String::as_str) == Some("backup") {
+        return match backup_command(&args[1..]).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    if args.first().map(String::as_str) == Some("account") {
+        return match account_command(&args[1..]).await {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
 
     if args.first().map(String::as_str) == Some("dataset") {
         return match dataset_command(&args[1..]).await {
@@ -59,18 +79,94 @@ async fn run() -> Result<(), String> {
         .map_err(|e| format!("could not bind {}: {e}", config.bind))?;
     tracing::info!("Korpus listening on http://{}", config.bind);
 
+    let auth = Arc::new(Guard::default());
+    match korpus::auth::has_account(&db).await {
+        // Logged right away so the code is in the log before anyone asks.
+        Ok(false) => {
+            if let Err(e) = auth.setup_code() {
+                tracing::error!(error = %e, "could not create a setup code");
+            }
+        }
+        Ok(true) => {}
+        Err(e) => tracing::error!(error = %e, "could not read the login account"),
+    }
+
     let app = router(AppState {
         db: db.clone(),
         providers: Arc::new(providers),
         config: Arc::new(config),
+        auth,
     });
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .map_err(|e| format!("server error: {e}"))?;
+    // Client addresses limit failed login attempts per client.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await
+    .map_err(|e| format!("server error: {e}"))?;
     db.close().await;
     tracing::info!("shut down cleanly");
     Ok(())
+}
+
+/// `korpus backup <file>`: a consistent copy of the database for scripts
+/// (the web download needs a login). Safe while the server runs.
+async fn backup_command(args: &[String]) -> Result<(), String> {
+    let [path] = args else {
+        return Err("usage: korpus backup <file>   (the file must not exist yet)".into());
+    };
+    let config = Config::from_env().map_err(|e| format!("configuration error: {e}"))?;
+    let db = korpus::db::connect(&config.database_url)
+        .await
+        .map_err(|e| format!("could not open database: {e}"))?;
+    let result = korpus::backup::write_snapshot(&db, std::path::Path::new(path))
+        .await
+        .map(|()| println!("Backup written to {path}."))
+        .map_err(|e| format!("backup failed: {e}"));
+    db.close().await;
+    result
+}
+
+const ACCOUNT_USAGE: &str = "usage:
+  korpus account reset         remove the login (diary data is kept); the next visitor
+                               creates a new one with a setup code from the server log
+  korpus account disable-2fa   turn off two-factor login, e.g. after losing the phone";
+
+/// `korpus account …`: recovery when the password or authenticator is lost.
+/// Needs access to the server (and its database), not to the web page.
+async fn account_command(args: &[String]) -> Result<(), String> {
+    let config = Config::from_env().map_err(|e| format!("configuration error: {e}"))?;
+    let db = korpus::db::connect(&config.database_url)
+        .await
+        .map_err(|e| format!("could not open database: {e}"))?;
+    let result = match args.first().map(String::as_str) {
+        Some("reset") => korpus::auth::reset(&db)
+            .await
+            .map(|removed| {
+                if removed {
+                    println!(
+                        "Login removed and every device logged out. Restart Korpus (or open it) to get a setup code for a new login."
+                    );
+                } else {
+                    println!("No login exists yet.");
+                }
+            })
+            .map_err(|e| e.to_string()),
+        Some("disable-2fa") => korpus::auth::disable_totp(&db)
+            .await
+            .map(|changed| {
+                if changed {
+                    println!("Two-factor login is off. Log in with the username and password.");
+                } else {
+                    println!("Two-factor login was not on.");
+                }
+            })
+            .map_err(|e| e.to_string()),
+        _ => Err(ACCOUNT_USAGE.to_string()),
+    };
+    db.close().await;
+    result
 }
 
 const DATASET_USAGE: &str = "usage:

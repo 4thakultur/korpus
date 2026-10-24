@@ -1,5 +1,6 @@
 //! HTTP routing, middleware and shared handler helpers.
 
+mod auth;
 mod diary;
 mod foods;
 mod goals;
@@ -32,6 +33,7 @@ use crate::error::{AppError, AppResult};
 use crate::i18n::Lang;
 use crate::providers::Providers;
 
+pub use auth::Guard;
 pub use theme::{Theme, current_theme};
 
 #[derive(Clone)]
@@ -39,6 +41,8 @@ pub struct AppState {
     pub db: SqlitePool,
     pub providers: Arc<Providers>,
     pub config: Arc<Config>,
+    /// Failed-login counts and the account setup code.
+    pub auth: Arc<Guard>,
 }
 
 /// Default request body limit; forms are small.
@@ -66,6 +70,23 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(diary::root))
         .route("/setup", get(settings::setup_form).post(settings::setup_save))
+        .route(
+            "/account/setup",
+            get(auth::account_setup_form).post(auth::account_setup),
+        )
+        .route("/login", get(auth::login_form).post(auth::login))
+        .route("/login/code", get(auth::code_form).post(auth::code))
+        .route("/logout", post(auth::logout))
+        .route(
+            "/settings/password",
+            get(auth::password_form).post(auth::change_password),
+        )
+        .route(
+            "/settings/2fa",
+            get(auth::two_factor_form).post(auth::enable_two_factor),
+        )
+        .route("/settings/2fa/start", post(auth::start_two_factor))
+        .route("/settings/2fa/disable", post(auth::disable_two_factor))
         .route("/diary", get(diary::day))
         .route("/diary/entries", post(diary::create))
         .route("/diary/entries/{id}/edit", get(diary::edit_form))
@@ -104,7 +125,12 @@ pub fn router(state: AppState) -> Router {
         .merge(dataset_upload)
         .fallback(|| async { AppError::NotFound })
         .layer(middleware::from_fn(same_origin_writes))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_login,
+        ))
         .layer(middleware::from_fn_with_state(state.clone(), language))
+        .layer(middleware::from_fn_with_state(state.clone(), allowed_host))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(csp),
@@ -124,6 +150,14 @@ pub fn router(state: AppState) -> Router {
         .layer(SetResponseHeaderLayer::if_not_present(
             HeaderName::from_static("permissions-policy"),
             HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-resource-policy"),
+            HeaderValue::from_static("same-origin"),
         ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CACHE_CONTROL,
@@ -180,6 +214,66 @@ pub fn browser_lang(headers: &axum::http::HeaderMap) -> Lang {
         .and_then(|v| v.to_str().ok())
         .map(Lang::from_accept_language)
         .unwrap_or_default()
+}
+
+/// Protection against DNS rebinding: a website the user visits could point
+/// its own domain at this server's address and then read and change the
+/// diary as if it were the same origin. Browsers always send the name they
+/// connected to in `Host`, so only IP addresses, `localhost` and the names
+/// configured in `KORPUS_ALLOWED_HOSTS` are answered.
+async fn allowed_host(State(state): State<AppState>, req: Request, next: Next) -> Response {
+    let headers = req.headers();
+    // HTTP/2 carries the host in the request target instead of `Host`.
+    let host = match headers.get(header::HOST) {
+        Some(v) => v.to_str().ok(),
+        None => req.uri().authority().map(|a| a.as_str()),
+    };
+    let forwarded = headers
+        .get("x-forwarded-host")
+        .map(|v| v.to_str().ok().and_then(|v| v.split(',').next()));
+    let allowed = |h: Option<&str>| {
+        h.is_some_and(|h| host_is_allowed(h, state.config.allowed_hosts.as_deref()))
+    };
+    // A request without any host name cannot come from a browser.
+    let host_ok = (host.is_none() && !headers.contains_key(header::HOST)) || allowed(host);
+    if !host_ok || forwarded.is_some_and(|f| !allowed(f)) {
+        tracing::warn!(
+            host = host.unwrap_or("?"),
+            "request for a host name that is not allowed (see KORPUS_ALLOWED_HOSTS)"
+        );
+        return (
+            StatusCode::MISDIRECTED_REQUEST,
+            [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+            "This Korpus server does not answer to this host name. \
+             If it is your server, add the name to KORPUS_ALLOWED_HOSTS.\n",
+        )
+            .into_response();
+    }
+    next.run(req).await
+}
+
+/// Whether `authority` ("name", "name:port", "[v6]:port") names this server.
+pub fn host_is_allowed(authority: &str, allowed: Option<&[String]>) -> bool {
+    let name = match authority.strip_prefix('[') {
+        Some(v6) => match v6.split_once(']') {
+            Some((addr, _)) => addr,
+            None => return false,
+        },
+        None => authority
+            .rsplit_once(':')
+            .map_or(authority, |(name, _)| name),
+    };
+    let name = crate::config::normalize_host(name.trim());
+    if name.parse::<std::net::IpAddr>().is_ok()
+        || name == "localhost"
+        || name.ends_with(".localhost")
+    {
+        return true;
+    }
+    match allowed {
+        None => !name.is_empty(),
+        Some(list) => list.contains(&name),
+    }
 }
 
 /// CSRF protection for cookie-less, same-origin form posts: browsers send
@@ -304,6 +398,11 @@ pub fn flash_message(key: Option<&str>, lang: Lang) -> Option<&'static str> {
         "goals_saved" => lang.t("Goal settings saved."),
         "settings_saved" => lang.t("Settings saved."),
         "appearance_saved" => lang.t("Appearance saved on this device."),
+        "password_changed" => lang.t("Password changed. Other devices have been logged out."),
+        "twofa_enabled" => {
+            lang.t("Two-factor authentication is on. Other devices have been logged out.")
+        }
+        "twofa_disabled" => lang.t("Two-factor authentication is off."),
         "imported" => lang.t("Import complete."),
         "dataset_imported" => {
             lang.t("Food table imported. Search now uses it where it fits your country.")
@@ -438,6 +537,36 @@ mod tests {
             url_encode("crème fraîche&x=1"),
             "cr%C3%A8me+fra%C3%AEche%26x%3D1"
         );
+    }
+
+    #[test]
+    fn only_local_and_configured_host_names_are_answered() {
+        let list = vec!["korpus.lan".to_string()];
+        let allowed = Some(list.as_slice());
+        for ok in [
+            "localhost",
+            "localhost:9874",
+            "app.localhost",
+            "127.0.0.1:9874",
+            "192.168.1.20",
+            "[::1]:9874",
+            "[fd00::2]",
+            "korpus.lan",
+            "KORPUS.LAN.:443",
+        ] {
+            assert!(host_is_allowed(ok, allowed), "{ok}");
+        }
+        for bad in [
+            "evil.example",
+            "evil.example:9874",
+            "korpus.lan.evil.example",
+            "localhost.evil.example",
+            "",
+            "[::1",
+        ] {
+            assert!(!host_is_allowed(bad, allowed), "{bad}");
+        }
+        assert!(host_is_allowed("anything.example", None));
     }
 
     #[test]

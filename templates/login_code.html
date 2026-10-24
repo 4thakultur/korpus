@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="welcome">
+  <span class="app-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2.2 1.2-3.5 3.8-3.5 7v3H17"/></svg></span>
+  <h1>{{ lang.t("Two-factor authentication") }}</h1>
+  <p id="code-hint">{{ lang.t("Enter the 6-digit code from your authenticator app.") }}</p>
+</header>
+<form method="post" action="/login/code" novalidate>
+  <input type="hidden" name="next" value="{{ next }}">
+  <div class="code-field">
+    <label for="code" class="visually-hidden">{{ lang.t("Authentication code") }}</label>
+    <input type="text" id="code" name="code" required autofocus placeholder="000000" inputmode="numeric" autocomplete="one-time-code" maxlength="7" spellcheck="false" aria-describedby="code-hint{% if error.is_some() %} code-error{% endif %}"{% if error.is_some() %} aria-invalid="true"{% endif %}>
+    {% if let Some(e) = error %}<p class="field-error" role="alert" id="code-error">{{ e }}</p>{% endif %}
+  </div>
+  <button type="submit" class="primary block">{{ lang.t("Verify") }}</button>
+</form>
+<p class="section-note login-help"><a href="/login">{{ lang.t("Back to log in") }}</a></p>
+<p class="section-note login-help">{{ lang.t("Lost your authenticator? The server administrator can turn two-factor authentication off with:") }} <code>korpus account disable-2fa</code></p>
+{% endblock %}

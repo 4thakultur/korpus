@@ -334,6 +334,12 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
     ("date", "date", "fecha"),
     ("meal", "repas", "comida"),
     ("unit", "unité", "unidad"),
+    ("text too long", "texte trop long", "texto demasiado largo"),
+    (
+        "goal settings",
+        "réglages d'objectif",
+        "ajustes de objetivo",
+    ),
     (
         "Import is only possible into an empty installation. This one already contains foods, diary entries or weights.",
         "L'import n'est possible que dans une installation vide. Celle-ci contient déjà des aliments, des entrées de journal ou des poids.",
@@ -693,7 +699,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Importación completada.",
     ),
     ("Foods", "Aliments", "Alimentos"),
-    ("Search: {0}", "Recherche : {0}", "Búsqueda: {0}"),
     (
         "Energy was provided in kJ and converted to kcal (1 kcal = 4.184 kJ).",
         "L'énergie était indiquée en kJ et a été convertie en kcal (1 kcal = 4,184 kJ).",
@@ -1541,6 +1546,219 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Choose the downloaded file to import.",
         "Choisissez le fichier téléchargé à importer.",
         "Elija el archivo descargado que desea importar.",
+    ),
+    // Login and account.
+    ("Log in", "Se connecter", "Iniciar sesión"),
+    ("Log out", "Se déconnecter", "Cerrar sesión"),
+    ("Account", "Compte", "Cuenta"),
+    ("Username", "Nom d'utilisateur", "Nombre de usuario"),
+    ("Password", "Mot de passe", "Contraseña"),
+    (
+        "Confirm password",
+        "Confirmer le mot de passe",
+        "Confirmar contraseña",
+    ),
+    (
+        "Current password",
+        "Mot de passe actuel",
+        "Contraseña actual",
+    ),
+    ("New password", "Nouveau mot de passe", "Nueva contraseña"),
+    (
+        "Confirm new password",
+        "Confirmer le nouveau mot de passe",
+        "Confirmar nueva contraseña",
+    ),
+    (
+        "Change password",
+        "Changer le mot de passe",
+        "Cambiar contraseña",
+    ),
+    (
+        "Setup code",
+        "Code de configuration",
+        "Código de configuración",
+    ),
+    ("Create account", "Créer le compte", "Crear cuenta"),
+    (
+        "Create your account",
+        "Créez votre compte",
+        "Cree su cuenta",
+    ),
+    (
+        "Korpus is protected by a login. Choose a username and password for this installation.",
+        "Korpus est protégé par une connexion. Choisissez un nom d'utilisateur et un mot de passe pour cette installation.",
+        "Korpus está protegido con un inicio de sesión. Elija un nombre de usuario y una contraseña para esta instalación.",
+    ),
+    (
+        "Printed in the server log when Korpus starts. It proves that you are the one running this server. For example:",
+        "Affiché dans le journal du serveur au démarrage de Korpus. Il prouve que c'est vous qui gérez ce serveur. Par exemple :",
+        "Se muestra en el registro del servidor al iniciarse Korpus. Demuestra que usted administra este servidor. Por ejemplo:",
+    ),
+    (
+        "At least {0} characters. A passphrase of several words is easy to remember and hard to guess.",
+        "Au moins {0} caractères. Une phrase de plusieurs mots est facile à retenir et difficile à deviner.",
+        "Al menos {0} caracteres. Una frase de varias palabras es fácil de recordar y difícil de adivinar.",
+    ),
+    (
+        "Enter a username.",
+        "Saisissez un nom d'utilisateur.",
+        "Introduzca un nombre de usuario.",
+    ),
+    (
+        "The username can have at most {0} characters.",
+        "Le nom d'utilisateur peut comporter au plus {0} caractères.",
+        "El nombre de usuario puede tener como máximo {0} caracteres.",
+    ),
+    (
+        "The password must have at least {0} characters.",
+        "Le mot de passe doit comporter au moins {0} caractères.",
+        "La contraseña debe tener al menos {0} caracteres.",
+    ),
+    (
+        "The password is too long.",
+        "Le mot de passe est trop long.",
+        "La contraseña es demasiado larga.",
+    ),
+    (
+        "The passwords do not match.",
+        "Les mots de passe ne correspondent pas.",
+        "Las contraseñas no coinciden.",
+    ),
+    (
+        "The setup code is incorrect. Check the server log.",
+        "Le code de configuration est incorrect. Consultez le journal du serveur.",
+        "El código de configuración es incorrecto. Consulte el registro del servidor.",
+    ),
+    (
+        "The username or password is incorrect.",
+        "Le nom d'utilisateur ou le mot de passe est incorrect.",
+        "El nombre de usuario o la contraseña son incorrectos.",
+    ),
+    (
+        "The current password is incorrect.",
+        "Le mot de passe actuel est incorrect.",
+        "La contraseña actual es incorrecta.",
+    ),
+    (
+        "Too many failed attempts. Wait a few minutes and try again.",
+        "Trop de tentatives échouées. Patientez quelques minutes puis réessayez.",
+        "Demasiados intentos fallidos. Espere unos minutos e inténtelo de nuevo.",
+    ),
+    (
+        "Forgot your password? The server administrator can remove the login with this command, then create a new one. Your diary is kept:",
+        "Mot de passe oublié ? L'administrateur du serveur peut supprimer la connexion avec cette commande, puis en créer une nouvelle. Votre journal est conservé :",
+        "¿Olvidó su contraseña? El administrador del servidor puede eliminar el inicio de sesión con este comando y crear uno nuevo. Su diario se conserva:",
+    ),
+    (
+        "Two-factor authentication",
+        "Authentification à deux facteurs",
+        "Autenticación de dos factores",
+    ),
+    (
+        "Authentication code",
+        "Code d'authentification",
+        "Código de autenticación",
+    ),
+    (
+        "Enter the 6-digit code from your authenticator app.",
+        "Saisissez le code à 6 chiffres de votre application d'authentification.",
+        "Introduzca el código de 6 dígitos de su aplicación de autenticación.",
+    ),
+    (
+        "Enter the 6-digit code the app shows.",
+        "Saisissez le code à 6 chiffres affiché par l'application.",
+        "Introduzca el código de 6 dígitos que muestra la aplicación.",
+    ),
+    (
+        "The code is incorrect or has expired.",
+        "Le code est incorrect ou a expiré.",
+        "El código es incorrecto o ha caducado.",
+    ),
+    ("Verify", "Vérifier", "Verificar"),
+    (
+        "Back to log in",
+        "Retour à la connexion",
+        "Volver al inicio de sesión",
+    ),
+    (
+        "Lost your authenticator? The server administrator can turn two-factor authentication off with:",
+        "Application d'authentification perdue ? L'administrateur du serveur peut désactiver l'authentification à deux facteurs avec :",
+        "¿Perdió su aplicación de autenticación? El administrador del servidor puede desactivar la autenticación de dos factores con:",
+    ),
+    ("On", "Activée", "Activada"),
+    ("Off", "Désactivée", "Desactivada"),
+    ("Turn on", "Activer", "Activar"),
+    ("Turn off", "Désactiver", "Desactivar"),
+    (
+        "Turn off two-factor authentication?",
+        "Désactiver l'authentification à deux facteurs ?",
+        "¿Desactivar la autenticación de dos factores?",
+    ),
+    (
+        "Logging in will only need your password.",
+        "La connexion ne demandera plus que votre mot de passe.",
+        "Para iniciar sesión solo se pedirá su contraseña.",
+    ),
+    (
+        "Enter your password to turn off two-factor authentication.",
+        "Saisissez votre mot de passe pour désactiver l'authentification à deux facteurs.",
+        "Introduzca su contraseña para desactivar la autenticación de dos factores.",
+    ),
+    (
+        "Enter your password to set up two-factor authentication.",
+        "Saisissez votre mot de passe pour configurer l'authentification à deux facteurs.",
+        "Introduzca su contraseña para configurar la autenticación de dos factores.",
+    ),
+    (
+        "Start over with a new QR code",
+        "Recommencer avec un nouveau code QR",
+        "Empezar de nuevo con un nuevo código QR",
+    ),
+    (
+        "Logging in asks for a code from your authenticator app after the password.",
+        "La connexion demande un code de votre application d'authentification après le mot de passe.",
+        "Al iniciar sesión se pide un código de su aplicación de autenticación después de la contraseña.",
+    ),
+    (
+        "When it is on, logging in also asks for a code from an authenticator app on your phone, so a stolen password is not enough.",
+        "Lorsqu'elle est activée, la connexion demande aussi un code d'une application d'authentification sur votre téléphone : un mot de passe volé ne suffit plus.",
+        "Cuando está activada, al iniciar sesión también se pide un código de una aplicación de autenticación en su teléfono, así que una contraseña robada no basta.",
+    ),
+    (
+        "Scan this QR code with an authenticator app, for example Aegis, 2FAS, Google Authenticator or 1Password.",
+        "Scannez ce code QR avec une application d'authentification, par exemple Aegis, 2FAS, Google Authenticator ou 1Password.",
+        "Escanee este código QR con una aplicación de autenticación, por ejemplo Aegis, 2FAS, Google Authenticator o 1Password.",
+    ),
+    (
+        "Or enter this key manually:",
+        "Ou saisissez cette clé manuellement :",
+        "O introduzca esta clave manualmente:",
+    ),
+    (
+        "QR code for your authenticator app",
+        "Code QR pour votre application d'authentification",
+        "Código QR para su aplicación de autenticación",
+    ),
+    (
+        "Other devices are logged out.",
+        "Les autres appareils sont déconnectés.",
+        "Se cierra la sesión en los demás dispositivos.",
+    ),
+    (
+        "Password changed. Other devices have been logged out.",
+        "Mot de passe modifié. Les autres appareils ont été déconnectés.",
+        "Contraseña cambiada. Se ha cerrado la sesión en los demás dispositivos.",
+    ),
+    (
+        "Two-factor authentication is on. Other devices have been logged out.",
+        "L'authentification à deux facteurs est activée. Les autres appareils ont été déconnectés.",
+        "La autenticación de dos factores está activada. Se ha cerrado la sesión en los demás dispositivos.",
+    ),
+    (
+        "Two-factor authentication is off.",
+        "L'authentification à deux facteurs est désactivée.",
+        "La autenticación de dos factores está desactivada.",
     ),
 ];
 

@@ -10,12 +10,22 @@ services:
     environment:
       KORPUS_BIND: 0.0.0.0:9874
       KORPUS_DATABASE_URL: sqlite:///data/korpus.db
-    # Published on localhost only. Korpus has no login: put it behind a
-    # reverse proxy with authentication before exposing it (see README).
+    # Published on localhost only. To reach it from other devices, put a
+    # reverse proxy with TLS in front (see README) and set
+    # KORPUS_TRUSTED_PROXIES in .env so failed logins count per client.
     ports:
       - "127.0.0.1:9874:9874"
     volumes:
       - korpus-data:/data
+    # Hardening: everything Korpus writes lives in /data (database) and
+    # /tmp (short-lived backup copies); it needs no Linux capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   korpus-data:

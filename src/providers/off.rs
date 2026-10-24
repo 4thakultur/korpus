@@ -42,6 +42,14 @@ const POOL_SIZE: usize = 100;
 const BRAND_POOL_SIZE: usize = 50;
 /// Longest a search waits for the rate limiter before reporting a limit.
 const SEARCH_MAX_WAIT: Duration = Duration::from_secs(3);
+/// Largest response body read from Open Food Facts. A search pool of
+/// [`POOL_SIZE`] products is a few hundred kilobytes; anything far larger is
+/// not a response this client asked for.
+const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+/// Redirects followed per request, and only within the same host, so a
+/// misconfigured or hijacked upstream cannot point Korpus at other servers
+/// on the local network.
+const MAX_REDIRECTS: usize = 3;
 const FIELDS: &str = "code,product_name,brands,nutriments,nutrition_data_per,serving_size,\
 serving_quantity,product_quantity_unit,quantity,last_modified_t,unique_scans_n";
 
@@ -71,6 +79,18 @@ impl OpenFoodFacts {
             .user_agent(config.user_agent.clone())
             .timeout(config.provider_timeout)
             .connect_timeout(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                let (to, previous) = (attempt.url(), attempt.previous());
+                let same_host = previous.first().is_some_and(|first| {
+                    first.host_str() == to.host_str()
+                        && (first.scheme() == to.scheme() || to.scheme() == "https")
+                });
+                if same_host && previous.len() <= MAX_REDIRECTS {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
             .build()?;
         Ok(OpenFoodFacts {
             client,
@@ -104,12 +124,12 @@ impl OpenFoodFacts {
             }
             if status.as_u16() == 404 {
                 // The product endpoint answers 404 with a JSON body for unknown codes.
-                return resp.json::<Value>().await.or(Ok(Value::Null));
+                return Ok(read_json(resp).await.unwrap_or(Value::Null));
             }
             if !status.is_success() {
                 return Err(ProviderError::Unavailable(format!("HTTP {status}")));
             }
-            return resp.json::<Value>().await.map_err(map_reqwest);
+            return read_json(resp).await;
         }
     }
 
@@ -371,6 +391,25 @@ fn brand_query(q: &Query, hits: &[Hit]) -> Option<String> {
         filter.join(" OR "),
         split.rest.join(" ")
     ))
+}
+
+/// Reads a JSON body of at most [`MAX_RESPONSE_BYTES`].
+async fn read_json(mut resp: reqwest::Response) -> Result<Value, ProviderError> {
+    let too_large = || ProviderError::InvalidResponse("response too large".into());
+    if resp
+        .content_length()
+        .is_some_and(|n| n > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err(too_large());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(map_reqwest)? {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(too_large());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).map_err(|e| ProviderError::InvalidResponse(e.to_string()))
 }
 
 fn map_reqwest(e: reqwest::Error) -> ProviderError {

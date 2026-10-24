@@ -6,14 +6,20 @@ rust-version = "1.88"
 description = "A small, self-hostable calorie and macronutrient tracker"
 
 [dependencies]
+argon2 = "0.6"
 askama = "0.16.1"
 axum = { version = "0.8.9", features = ["multipart"] }
 calamine = "0.37.0"
 encoding_rs = "0.8.42"
+getrandom = "0.4"
+hmac = "0.13"
 jiff = { version = "0.2.38", features = ["tzdb-bundle-always"] }
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "rustls"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha1 = "0.11"
+sha2 = "0.11"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"] }

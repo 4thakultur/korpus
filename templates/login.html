@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="welcome">
+  <span class="app-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2.2 1.2-3.5 3.8-3.5 7v3H17"/></svg></span>
+  <h1>{{ lang.t("Log in") }}</h1>
+</header>
+{% if let Some(e) = error %}<p class="field-error form-error" role="alert" id="login-error" tabindex="-1" data-focus>{{ e }}</p>{% endif %}
+<form method="post" action="/login" novalidate>
+  <input type="hidden" name="next" value="{{ next }}">
+  <div class="group float-group">
+    <div class="float-field">
+      <input type="text" id="username" name="username" placeholder=" " value="{{ username }}" required autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="64"{% if username.is_empty() %} autofocus{% endif %}{% if error.is_some() %} aria-describedby="login-error" aria-invalid="true"{% endif %}>
+      <label for="username">{{ lang.t("Username") }}</label>
+    </div>
+    <div class="float-field">
+      <input type="password" id="password" name="password" placeholder=" " required autocomplete="current-password"{% if !username.is_empty() %} autofocus{% endif %}{% if error.is_some() %} aria-describedby="login-error" aria-invalid="true"{% endif %}>
+      <label for="password">{{ lang.t("Password") }}</label>
+    </div>
+  </div>
+  <button type="submit" class="primary block">{{ lang.t("Log in") }}</button>
+</form>
+<p class="section-note login-help">{{ lang.t("Forgot your password? The server administrator can remove the login with this command, then create a new one. Your diary is kept:") }} <code>korpus account reset</code></p>
+{% endblock %}

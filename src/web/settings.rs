@@ -269,6 +269,9 @@ pub struct SettingsPage {
     pub active_dataset: Option<&'static str>,
     pub theme: Theme,
     pub themes: [Theme; 3],
+    /// The login's name and whether two-factor login is on.
+    pub username: String,
+    pub totp_enabled: bool,
 }
 
 async fn settings_page(
@@ -283,6 +286,7 @@ async fn settings_page(
     let p = profile::load(&state.db).await?;
     let country = p.country();
     let (datasets, active_dataset) = dataset_views(state, lang, country, dataset_error).await?;
+    let account = crate::auth::account(&state.db).await?;
     Ok(SettingsPage {
         lang,
         title: lang.t("Settings").into(),
@@ -314,6 +318,11 @@ async fn settings_page(
         active_dataset,
         theme: current_theme(),
         themes: Theme::ALL,
+        username: account
+            .as_ref()
+            .map(|a| a.username.clone())
+            .unwrap_or_default(),
+        totp_enabled: account.is_some_and(|a| a.totp_enabled),
     })
 }
 
@@ -372,6 +381,19 @@ pub async fn save(
     }
 }
 
+/// Imports and backups hold whole files in memory and keep the database
+/// busy for a while. Running one at a time keeps a burst of uploads (or
+/// requests from an unwanted visitor) from exhausting the server's memory;
+/// the others wait, within the request timeout, before reading their upload.
+static HEAVY_TASK: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+async fn heavy_task() -> AppResult<tokio::sync::SemaphorePermit<'static>> {
+    HEAVY_TASK
+        .acquire()
+        .await
+        .map_err(|e| AppError::Internal(format!("import queue: {e}")))
+}
+
 fn download(content_type: &'static str, filename: String, body: impl IntoResponse) -> Response {
     (
         [
@@ -411,6 +433,7 @@ pub async fn export_csv(State(state): State<AppState>) -> AppResult<Response> {
 }
 
 pub async fn backup(State(state): State<AppState>) -> AppResult<Response> {
+    let _permit = heavy_task().await?;
     let bytes = backup::sqlite_snapshot(&state.db).await?;
     Ok(download(
         "application/vnd.sqlite3",
@@ -444,6 +467,7 @@ async fn read_upload(mut multipart: Multipart, lang: Lang) -> Result<Vec<u8>, St
 
 pub async fn import(State(state): State<AppState>, multipart: Multipart) -> AppResult<Response> {
     let lang = current_lang();
+    let _permit = heavy_task().await?;
     let result = match read_upload(multipart, lang).await {
         Ok(bytes) => match serde_json::from_slice::<Export>(&bytes) {
             Ok(export) => match backup::import(&state.db, &export, lang).await {
@@ -526,14 +550,23 @@ pub async fn import_dataset(
 ) -> AppResult<Response> {
     let lang = current_lang();
     let dataset = dataset_from_path(&id)?;
+    // Shared with the parsing thread, which keeps running if this request
+    // is cancelled (e.g. by its timeout).
+    let permit = std::sync::Arc::new(heavy_task().await?);
     let parsed = match read_dataset_upload(multipart, lang).await {
-        Ok(files) => tokio::task::spawn_blocking(move || dataset.parse_files(&files))
+        Ok(files) => {
+            let held = permit.clone();
+            tokio::task::spawn_blocking(move || {
+                let _held = held;
+                dataset.parse_files(&files)
+            })
             .await
             .map_err(|e| AppError::Internal(format!("dataset import task: {e}")))?
             .map_err(|e| {
                 tracing::warn!(dataset = dataset.id(), error = %e, "dataset import rejected");
                 e.message(dataset, lang)
-            }),
+            })
+        }
         Err(msg) => Err(msg),
     };
     match parsed {
@@ -566,6 +599,7 @@ pub async fn install_bundled_dataset(
 ) -> AppResult<Response> {
     let dataset = dataset_from_path(&id)?;
     let bundled = Bundled::get(dataset).ok_or(AppError::NotFound)?;
+    let _permit = heavy_task().await?;
     let stored = bundled.install(&state.db).await?;
     tracing::info!(
         dataset = dataset.id(),

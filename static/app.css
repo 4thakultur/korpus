@@ -449,14 +449,14 @@ legend, .group-head {
 .req, .opt { font-weight: 400; color: var(--label-2); font-size: 0.8125rem; }
 
 input[type="text"], input[type="search"], input[type="date"], input[type="file"],
-input[type="number"], select, textarea {
+input[type="number"], input[type="password"], select, textarea {
   width: 100%; min-height: 44px; padding: 10px 14px;
   font: inherit; color: var(--label);
   background: var(--fill); border: 0; border-radius: var(--radius-sm);
   appearance: none; -webkit-appearance: none;
 }
 /* Inside a row, values sit on the right with no box around them. */
-.form-row :is(input[type="text"], input[type="number"], select, textarea) {
+.form-row :is(input[type="text"], input[type="number"], input[type="password"], select, textarea) {
   min-height: 38px; padding: 6px 0; background: transparent; border-radius: 6px; text-align: right;
 }
 .form-row input[type="date"] {
@@ -919,6 +919,78 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 }
 .app-icon svg { width: 44px; height: 44px; }
 .welcome p { color: var(--label-2); max-width: 30rem; margin: 0 auto; }
+
+/* Login and account pages. */
+.form-error { margin: 0 4px 12px; }
+
+/* Sign-in fields as on Apple's account pages: each field spans the row and
+   its label sits inside like a placeholder, moving up once the field has
+   focus or a value. The label stays a real <label> (it follows the input
+   so the sibling selector works without :has). */
+.float-group { overflow: hidden; }
+.float-field { position: relative; }
+.float-group > .float-field + .float-field::before {
+  content: ""; position: absolute; top: 0; left: 16px; right: 0; z-index: 1;
+  border-top: 0.5px solid var(--separator);
+}
+.float-field input {
+  display: block; width: 100%; min-height: 60px; padding: 26px 16px 8px;
+  font: inherit; font-size: 1.0625rem; color: var(--label);
+  background: transparent; border: 0; border-radius: 0; text-align: left;
+  appearance: none; -webkit-appearance: none;
+}
+.float-field label {
+  position: absolute; left: 16px; right: 16px; top: 19px;
+  font-size: 1.0625rem; line-height: 1.3; color: var(--label-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none; transform-origin: left top;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+.float-field input:focus + label,
+.float-field input:not(:placeholder-shown) + label {
+  transform: translateY(-11px) scale(0.75);
+}
+.float-field input:focus + label { color: var(--tint); }
+.float-field input[aria-invalid="true"] + label { color: var(--danger); }
+/* As in grouped rows elsewhere: red text, no box inside the card. */
+.float-field input[aria-invalid="true"] { box-shadow: none; }
+/* The ring sits inside the field, so the rounded group does not clip it. */
+.float-field input:focus-visible { outline: 2px solid var(--tint); outline-offset: -2px; }
+.float-group > .float-field:first-child input:focus-visible { border-radius: var(--radius) var(--radius) 0 0; }
+.float-group > .float-field:last-child input:focus-visible { border-radius: 0 0 var(--radius) var(--radius); }
+.float-group > .float-field:only-child input:focus-visible { border-radius: var(--radius); }
+.float-field .field-error { margin: -2px 16px 10px; }
+
+/* A one-off code (setup code, authenticator code): one large field with
+   evenly spaced characters, like Apple's verification code entry. */
+.code-field { margin: 0 0 8px; text-align: center; }
+.code-field label { display: block; margin: 0 0 8px; font-size: 0.9375rem; font-weight: 600; color: var(--label-2); }
+.code-field input {
+  display: block; width: 100%; min-height: 64px; padding: 12px 16px;
+  font: 600 1.625rem/1.2 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  letter-spacing: 0.18em; text-align: center; text-transform: uppercase;
+  color: var(--label); background: var(--card); border: 0; border-radius: var(--radius-md);
+  box-shadow: var(--shadow); appearance: none; -webkit-appearance: none;
+}
+.code-field input::placeholder { color: var(--label-2); opacity: 0.45; }
+.code-field input:focus-visible { outline: 2px solid var(--tint); outline-offset: 0; }
+.code-field input[aria-invalid="true"] { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.code-field input[aria-invalid="true"]:focus-visible { outline-color: var(--danger); }
+.code-field .field-error { margin-top: 8px; }
+.code-field + .group-foot { text-align: center; }
+.group-foot code, .login-help code { white-space: nowrap; }
+.welcome + .error-summary, .welcome + .form-error { margin-top: -8px; }
+.login-help { text-align: center; margin-top: 20px; }
+.logout { margin-top: 16px; }
+.steps { margin: 0 0 20px; padding-left: 1.4em; }
+.steps > li { margin: 0 0 12px; }
+/* The QR code keeps black on white in dark mode: scanners need it. */
+.qr-frame {
+  display: inline-block; margin: 12px 0 4px; padding: 10px; border-radius: var(--radius-sm);
+  background: #fff; box-shadow: var(--shadow);
+}
+.qr-frame .qr { display: block; width: 200px; height: 200px; }
+code.secret { overflow-wrap: anywhere; letter-spacing: 0.04em; user-select: all; }
 
 /* Progressive enhancement helpers: toggled by app.js. */
 .js-only { display: none; }

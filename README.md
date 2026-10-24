@@ -4,7 +4,7 @@ A small, fast, self-hostable calorie and macronutrient tracker. Find a food,
 check its nutrition, log what you ate and see your day add up. You can also
 track your weight and set a calorie target if you want one.
 
-- **Private.** Your diary, weight and profile stay in one SQLite file on your server. There is no analytics, tracking or AI.
+- **Private.** Your diary, weight and profile stay in one SQLite file on your server, behind a login with optional two-factor authentication. There is no analytics, tracking or AI.
 - **Works offline from providers.** Products are looked up in [Open Food Facts](https://world.openfoodfacts.org) when it's enabled. Your own foods, your diary and everything else work when it is down or turned off.
 - **National food tables, searched locally.** The French table Ciqual 2025 is included and installed on first start, so fruit, vegetables, eggs or milk can be found without picking a brand. You can also import the official table for your country (France, UK, USA, Canada or Australia). Korpus picks the one that fits the country set in your profile. Generic foods such as "apple, raw" then come with laboratory values, and searching them never leaves your server.
 - **Honest data.** Every food shows where its values come from. Missing values are flagged and never made up. Past diary days never change when you edit or delete a food.
@@ -38,9 +38,10 @@ With the default settings the database is created at `./data/korpus.db`.
 
 ### First run
 
-1. Choose a language (or keep following the browser), your country, metric or imperial units and your time zone. The country picks the food composition table search uses. The time zone decides when a new diary day starts.
-2. You can set a calorie goal now, or skip it.
-3. You land on today's diary. Press **Add food**, search for a product or create it from its label, enter the amount and add it to a meal.
+1. **Create your login.** Korpus asks for a username, a password (at least 10 characters) and a *setup code*. The code is printed in the server log when Korpus starts (`docker compose logs korpus`, or the terminal running it), so only the person running the server can create the account, even if someone else reaches a new instance first. It is only needed once.
+2. Choose a language (or keep following the browser), your country, metric or imperial units and your time zone. The country picks the food composition table search uses. The time zone decides when a new diary day starts.
+3. You can set a calorie goal now, or skip it.
+4. You land on today's diary. Press **Add food**, search for a product or create it from its label, enter the amount and add it to a meal.
 
 ## Configuration
 
@@ -49,6 +50,7 @@ All settings are environment variables. See [`.env.example`](.env.example).
 | Variable | Default | Purpose |
 |---|---|---|
 | `KORPUS_BIND` | `127.0.0.1:9874` | Address and port to listen on |
+| `KORPUS_ALLOWED_HOSTS` | *(empty)* | Host names Korpus answers to besides IP addresses and `localhost`, comma-separated (see below) |
 | `KORPUS_DATABASE_URL` | `sqlite://data/korpus.db` | SQLite database file |
 | `KORPUS_DEFAULT_TIMEZONE` | `UTC` | Time zone suggested at first-run setup |
 | `KORPUS_OFF_ENABLED` | `true` | Turn Open Food Facts lookups on or off |
@@ -63,16 +65,51 @@ wrong.
 
 ## Security and network exposure
 
-Korpus is built for **one person per installation** and has **no login**.
-Anyone who can reach the port can read and change your data. By default it
-listens on `127.0.0.1` only.
+Korpus is built for **one person per installation**. Every page needs a
+login, except the login pages themselves, the stylesheet and script, and the
+health checks. By default it listens on `127.0.0.1` only.
 
-To use it from other devices, put it behind a reverse proxy that handles TLS
-**and authentication**, for example HTTP basic auth, an SSO proxy, or a VPN
-such as WireGuard or Tailscale. Do not expose an unauthenticated instance to
-the internet.
+### Login and two-factor authentication
 
-Example with Caddy (automatic TLS plus basic auth):
+- **Password.** Stored as an Argon2id hash, never in plain text. Change it in **Settings → Account → Change password**; other devices are logged out.
+- **Two-factor authentication (optional).** **Settings → Account → Two-factor authentication** asks for your password, then shows a QR code for an authenticator app (Aegis, 2FAS, Google Authenticator, 1Password, …). Each start makes a new key, and the key is never shown again afterwards. Once it's on, logging in asks for the app's 6-digit code after the password. Each code works only once. Turning it on logs out other devices; turning it off needs the password.
+- **Sessions.** A login lasts 30 days and is extended while you use Korpus. The browser keeps a random token in an `HttpOnly`, `SameSite=Lax` cookie, which also gets `Secure` when your reverse proxy sends `X-Forwarded-Proto: https`. The database stores only a hash of each token, and backups leave sessions out, so a backup cannot be used to log in and restoring one does not bring back logged-out devices. **Settings → Account → Log out** ends the session.
+- **Guessing.** After 10 failed passwords, codes or setup codes from one address within 15 minutes, that address has to wait; requests sent at the same time count too. IPv6 addresses are counted per /64. There is also a limit of 100 failures across all addresses. Password checks run at most two at a time, so a flood of login requests cannot exhaust the server's memory. Failed logins are logged with the client address (`failed login`), for tools such as fail2ban.
+- **Behind a reverse proxy**, every request comes from the proxy's address, so the limit would apply to everyone together: anyone could lock you out of logging in with 10 wrong passwords. List your proxy in `KORPUS_TRUSTED_PROXIES` (for example `127.0.0.1`, or `172.16.0.0/12` when the proxy reaches the Docker container through its published port) so Korpus uses the client address the proxy adds to `X-Forwarded-For`. List only proxies you run: a listed address can claim to be any client. Devices already logged in are never affected by the limit.
+
+**Lost access?** These commands need access to the server, not to the web page.
+With Docker, run them as `docker compose exec korpus korpus account …`:
+
+```sh
+korpus account disable-2fa   # lost the phone: log in with the password only
+korpus account reset         # forgot the password: removes the login, keeps all diary data
+```
+
+After `reset`, the next visit asks you to create a new login, with a new setup
+code from the server log.
+
+Korpus only answers requests addressed to an IP address, `localhost`, or a
+host name listed in `KORPUS_ALLOWED_HOSTS`. When you open it by name (for
+example `https://korpus.example.org` or `http://korpus.lan:9874`), add that
+name, without scheme or port:
+
+```sh
+KORPUS_ALLOWED_HOSTS=korpus.example.org,korpus.lan
+```
+
+Other names get `421 Misdirected Request`. This stops *DNS rebinding*, where a
+website you visit points its own domain at your server's address so that your
+browser lets its scripts read and change your diary. If a reverse proxy
+rewrites `Host` (nginx does unless told otherwise) the name it sends must be
+allowed too; passing the original `Host` as in the examples below avoids that.
+
+To use it from other devices, put it behind a reverse proxy that handles
+TLS, or reach it through a VPN such as WireGuard or Tailscale. Without TLS,
+your password and session cookie cross the network unencrypted. For an
+instance reachable from the internet, turn on two-factor authentication. You
+can add a second layer such as the proxy's basic auth, an SSO proxy or a VPN.
+
+Example with Caddy (automatic TLS, plus optional basic auth as a second layer):
 
 ```caddy
 korpus.example.org {
@@ -99,9 +136,13 @@ location / {
 
 Other built-in protections:
 
+- **Login.** See [Login and two-factor authentication](#login-and-two-factor-authentication) above.
 - **Cross-site request forgery.** Every change request is checked against the browser's `Sec-Fetch-Site` and `Origin` headers, and cross-site requests are rejected. Your proxy must pass the original `Host` (or `X-Forwarded-Host`).
-- **Security headers.** A strict Content-Security-Policy with no inline scripts or styles, `X-Frame-Options: DENY`, `nosniff` and `Referrer-Policy: same-origin`.
-- **Limits.** Request bodies, queries, page sizes and provider calls are all bounded. SQL is always parameterized and templates escape their output.
+- **DNS rebinding.** Requests for unknown host names are refused (see `KORPUS_ALLOWED_HOSTS` above).
+- **Security headers.** A strict Content-Security-Policy with no inline scripts or styles, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: same-origin` and same-origin `Cross-Origin-Opener-Policy` / `Cross-Origin-Resource-Policy`.
+- **Limits.** Request bodies, queries, page sizes and provider calls are all bounded. Provider responses are capped at 8 MB and redirects are only followed within the same host. Uploaded spreadsheets and archives are checked for decompression bombs, and only one import or backup runs at a time. SQL is always parameterized and templates escape their output.
+- **Backups.** The temporary copy made for **Download backup** is written to a directory only the Korpus user can read and deleted right after.
+- **Container.** `compose.yaml` runs Korpus as an unprivileged user with a read-only root filesystem, no Linux capabilities and `no-new-privileges`; only `/data` and a `/tmp` tmpfs are writable.
 - **Logs.** Log lines record the method and path only. Search terms, diary contents and weights are never logged.
 
 ## External network use
@@ -304,11 +345,20 @@ Korpus is running).
 
 **Backup (recommended): Settings → Your data → Database backup.** This
 downloads a consistent snapshot made with SQLite's `VACUUM INTO`, which is
-safe while Korpus keeps writing. To automate it:
+safe while Korpus keeps writing. To automate it, use the command line (the
+web download needs a login). It is also safe while Korpus runs:
 
 ```sh
-curl -fsS -o "korpus-$(date +%F).db" http://127.0.0.1:9874/settings/backup.sqlite
+korpus backup "/backups/korpus-$(date +%F).db"
+# with Docker, into the data volume:
+docker compose exec korpus korpus backup "/data/korpus-$(date +%F).db"
 ```
+
+A backup contains your login too: the password hash and, if two-factor
+authentication is on, the authenticator secret. Keep backups as private as
+the server; `korpus backup` creates the file readable only by its owner and
+never overwrites an existing one. Sessions are left out, so after restoring
+you log in again.
 
 Without the web UI, use the `sqlite3` tool on the host (it is safe on a live
 database too):
@@ -316,6 +366,10 @@ database too):
 ```sh
 sqlite3 /path/to/korpus.db "VACUUM INTO '/backups/korpus-$(date +%F).db'"
 ```
+
+Such a copy still holds the sessions of that moment. After restoring one,
+run `sqlite3 /path/to/korpus.db "DELETE FROM sessions"` (with Korpus
+stopped) so devices logged out since then cannot get back in.
 
 Do **not** just copy `korpus.db` while Korpus is running: the copy can be
 inconsistent.
@@ -355,6 +409,11 @@ changes nothing.
 
 Downgrades are not supported. To go back, restore the backup taken before the
 upgrade.
+
+**Host name check:** Korpus now refuses requests for host names it does not
+know. If you open it by a name rather than an IP address or `localhost`, set
+`KORPUS_ALLOWED_HOSTS` to that name when you upgrade, or the browser will get
+`421 Misdirected Request` (see [Security and network exposure](#security-and-network-exposure)).
 
 ## Health checks
 

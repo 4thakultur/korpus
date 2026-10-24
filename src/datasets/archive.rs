@@ -9,6 +9,11 @@ use super::ImportError;
 /// or hostile archive cannot exhaust memory. The largest member any
 /// supported table needs (USDA SR Legacy `food_nutrient.csv`) is ~36 MB.
 const MAX_MEMBER_BYTES: u64 = 256 * 1024 * 1024;
+/// Largest total uncompressed size of a workbook's parts.
+const MAX_WORKBOOK_BYTES: u64 = 512 * 1024 * 1024;
+/// Largest sheet area (rows × columns) read. The biggest supported sheet,
+/// CoFID's, has under a million cells.
+const MAX_SHEET_CELLS: u64 = 10_000_000;
 
 /// A file as uploaded or read from disk.
 pub struct UploadFile {
@@ -80,8 +85,37 @@ pub fn decode_text(bytes: &[u8]) -> String {
 
 /// Opens an uploaded `.xlsx` workbook.
 pub fn workbook(file: &UploadFile) -> Result<calamine::Xlsx<Cursor<&[u8]>>, ImportError> {
+    check_expansion(file, MAX_MEMBER_BYTES, MAX_WORKBOOK_BYTES)?;
     calamine::open_workbook_from_rs(Cursor::new(file.bytes.as_slice()))
         .map_err(|e: calamine::XlsxError| ImportError::BadArchive(format!("{}: {e}", file.name)))
+}
+
+/// Decompresses every part of a workbook once, counting bytes, so a file
+/// whose parts expand far beyond any real spreadsheet (a "zip bomb") is
+/// refused before the spreadsheet reader loads them into memory. Declared
+/// sizes are not trusted: they can be forged.
+fn check_expansion(file: &UploadFile, max_member: u64, max_total: u64) -> Result<(), ImportError> {
+    let bad = |detail: String| ImportError::BadArchive(format!("{}: {detail}", file.name));
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(file.bytes.as_slice())).map_err(|e| bad(e.to_string()))?;
+    let mut total = 0u64;
+    let mut buf = vec![0u8; 64 * 1024];
+    for i in 0..archive.len() {
+        let mut member = archive.by_index(i).map_err(|e| bad(e.to_string()))?;
+        let mut size = 0u64;
+        loop {
+            let n = member.read(&mut buf).map_err(|e| bad(e.to_string()))? as u64;
+            if n == 0 {
+                break;
+            }
+            size += n;
+            total += n;
+            if size > max_member || total > max_total {
+                return Err(bad("uncompressed contents are too large".into()));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The rows of the first sheet whose name satisfies `matches`.
@@ -96,10 +130,33 @@ pub fn sheet_rows(
         .into_iter()
         .find(|n| matches(&n.to_lowercase()))
         .ok_or(ImportError::MissingFile(label))?;
-    let range = wb.worksheet_range(&name).map_err(|e| ImportError::Format {
+    let format = |detail: String| ImportError::Format {
         file: name.clone(),
-        detail: e.to_string(),
-    })?;
+        detail,
+    };
+    // Read cell by cell rather than with `worksheet_range`, which allocates
+    // the whole area between the first and last cell: two cells in opposite
+    // corners would ask for billions.
+    let mut reader = wb
+        .worksheet_cells_reader(&name)
+        .map_err(|e| format(e.to_string()))?;
+    let mut cells = Vec::new();
+    let (mut rows, mut cols) = ((u32::MAX, 0), (u32::MAX, 0));
+    while let Some(cell) = reader.next_cell().map_err(|e| format(e.to_string()))? {
+        let value = calamine::Data::from(cell.get_value().clone());
+        if value == calamine::Data::Empty {
+            continue;
+        }
+        let (r, c) = cell.get_position();
+        rows = (rows.0.min(r), rows.1.max(r));
+        cols = (cols.0.min(c), cols.1.max(c));
+        let area = u64::from(rows.1 - rows.0 + 1) * u64::from(cols.1 - cols.0 + 1);
+        if area > MAX_SHEET_CELLS {
+            return Err(format("sheet is too large".into()));
+        }
+        cells.push(calamine::Cell::new((r, c), value));
+    }
+    let range = calamine::Range::from_sparse(cells);
     Ok(range.rows().map(<[calamine::Data]>::to_vec).collect())
 }
 
@@ -167,6 +224,70 @@ pub(crate) mod tests {
             bytes: b"hello".to_vec(),
         };
         assert!(matches!(Zip::open(&f), Err(ImportError::BadArchive(_))));
+    }
+
+    #[test]
+    fn refuses_workbooks_that_expand_too_far() {
+        let zeros = vec![0u8; 1024 * 1024];
+        let bomb = zip_of(&[("a.xml", &zeros), ("b.xml", &zeros)]);
+        assert!(bomb.bytes.len() < 16 * 1024, "compresses well");
+        let mib = 1024 * 1024;
+        assert!(check_expansion(&bomb, mib, 2 * mib).is_ok());
+        for (member, total) in [(mib - 1, 2 * mib), (mib, 2 * mib - 1)] {
+            assert!(matches!(
+                check_expansion(&bomb, member, total),
+                Err(ImportError::BadArchive(_))
+            ));
+        }
+    }
+
+    /// A one-sheet workbook ("Data") with the given `<sheetData>` rows.
+    fn xlsx_of(rows: &str) -> UploadFile {
+        let main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        let workbook = format!(
+            r#"<workbook xmlns="{main}" xmlns:r="{rel}"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+        );
+        let rels = format!(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#
+        );
+        let sheet =
+            format!(r#"<worksheet xmlns="{main}"><sheetData>{rows}</sheetData></worksheet>"#);
+        let root_rels = format!(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>"#
+        );
+        let mut f = zip_of(&[
+            ("_rels/.rels", root_rels.as_bytes()),
+            ("xl/workbook.xml", workbook.as_bytes()),
+            ("xl/_rels/workbook.xml.rels", rels.as_bytes()),
+            ("xl/worksheets/sheet1.xml", sheet.as_bytes()),
+        ]);
+        f.name = "test.xlsx".into();
+        f
+    }
+
+    #[test]
+    fn reads_sheet_rows_from_the_first_cell() {
+        let f = xlsx_of(
+            r#"<row r="2"><c r="B2" t="inlineStr"><is><t>Name</t></is></c><c r="C2"><v>1.5</v></c></row><row r="3"><c r="C3"><v>2</v></c></row>"#,
+        );
+        let mut wb = workbook(&f).unwrap();
+        let rows = sheet_rows(&mut wb, "data", |n| n == "data").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(cell_text(&rows[0][0]), "Name");
+        assert_eq!(cell_text(&rows[1][1]), "2");
+    }
+
+    #[test]
+    fn refuses_sheets_spanning_a_huge_area() {
+        let f = xlsx_of(
+            r#"<row r="1"><c r="A1"><v>1</v></c></row><row r="1048576"><c r="XFD1048576"><v>2</v></c></row>"#,
+        );
+        let mut wb = workbook(&f).unwrap();
+        assert!(matches!(
+            sheet_rows(&mut wb, "data", |n| n == "data"),
+            Err(ImportError::Format { .. })
+        ));
     }
 
     #[test]
