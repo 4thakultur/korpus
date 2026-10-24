@@ -496,7 +496,8 @@ and Korpus gives no estimate for people under 18.
 
 ## Activity
 
-The Activity tab records what you did on a day, entered by hand:
+The Activity tab has two tabs, Sport and Gym (see below). Sport records
+what you did on a day, entered by hand:
 
 - **Steps.** Record the steps you walked, for example at the end of the
   day. The ring fills at your daily step goal (10,000 unless you change it
@@ -543,7 +544,7 @@ Activity data is included in the JSON export and the database backup.
 
 ## Gym
 
-The Gym tab holds your training programs. A program is made of routines
+The Gym tab, under Activity, holds your training programs. A program is made of routines
 (such as Push, Pull and Legs), and each routine lists its exercises with the
 number of sets, the reps (a number such as 8 or a range such as 8-12), an
 optional weight and rest time, and a note. Exercises held for a time, such as

@@ -169,7 +169,7 @@ body {
 main {
   max-width: 44rem;
   margin: 0 auto;
-  padding: 8px var(--gutter) 24px;
+  padding: 24px var(--gutter) 24px;
   padding-left: max(var(--gutter), env(safe-area-inset-left));
   padding-right: max(var(--gutter), env(safe-area-inset-right));
 }
@@ -320,6 +320,7 @@ body.has-tabs { padding-bottom: calc(var(--tabbar-h) + 32px + env(safe-area-inse
 
 .list { background: var(--card); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
 .list > ul, ul.list { list-style: none; margin: 0; padding: 0; }
+ul.list.section { margin: 0 0 28px; }
 .row {
   position: relative; display: flex; align-items: center; gap: 12px;
   min-height: 44px; padding: 11px 16px;

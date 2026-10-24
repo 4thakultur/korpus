@@ -26,7 +26,7 @@ use crate::i18n::Lang;
 use crate::profile;
 use crate::units::{UnitSystem, clean_text, parse_decimal, today_in, weekday_long, weekday_short};
 
-pub(super) const NAV: &str = "gym";
+pub(super) const NAV: &str = "activity";
 
 #[derive(Deserialize)]
 pub struct MsgQuery {

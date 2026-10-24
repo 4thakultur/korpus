@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
 {% include "_flash.html" %}
-<header class="page-head"><h1>{{ title }}</h1></header>
+{% let nav_tab = "gym" %}{% include "_activity_tabs.html" %}
+<h1 class="visually-hidden">{{ title }}</h1>
 
 <section class="section" aria-labelledby="workout-heading">
   <div class="section-head"><h2 id="workout-heading">{{ lang.t("Workout") }}</h2></div>

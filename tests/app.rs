@@ -1017,6 +1017,22 @@ async fn goals_live_under_settings() {
 }
 
 #[tokio::test]
+async fn gym_and_sport_live_under_activity() {
+    let a = app().await;
+    a.setup().await;
+
+    let sport = a.get("/activity").await.body;
+    let gym = a.get("/gym").await.body;
+    for page in [&sport, &gym] {
+        // One Activity entry in the tab bar, holding both tabs.
+        assert!(page.contains(r#"<li><a href="/activity" aria-current="page">"#));
+        assert!(!page.contains(r#"<li><a href="/gym""#));
+    }
+    assert!(sport.contains(r#"<a href="/activity" aria-current="page"><span>Sport</span>"#));
+    assert!(gym.contains(r#"<a href="/gym" aria-current="page"><span>Gym</span>"#));
+}
+
+#[tokio::test]
 async fn goals_estimate_custom_and_safety() {
     let a = app().await;
     a.setup().await;
