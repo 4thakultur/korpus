@@ -667,11 +667,6 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Aliment supprimé. Les entrées existantes du journal conservent leurs valeurs.",
         "Alimento eliminado. Las entradas existentes del diario conservan sus valores.",
     ),
-    (
-        "Product saved to your foods.",
-        "Produit ajouté à vos aliments.",
-        "Producto guardado en sus alimentos.",
-    ),
     ("Weight recorded.", "Poids enregistré.", "Peso registrado."),
     (
         "Weight for that date updated.",

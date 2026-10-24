@@ -390,7 +390,6 @@ pub fn flash_message(key: Option<&str>, lang: Lang) -> Option<&'static str> {
         "food_created" => lang.t("Food created."),
         "food_saved" => lang.t("Food saved. Existing diary entries keep their logged values."),
         "food_deleted" => lang.t("Food deleted. Existing diary entries keep their logged values."),
-        "imported_food" => lang.t("Product saved to your foods."),
         "history_cleared" => lang.t("History cleared. Your diary and saved foods are unchanged."),
         "weight_saved" => lang.t("Weight recorded."),
         "weight_replaced" => lang.t("Weight for that date updated."),

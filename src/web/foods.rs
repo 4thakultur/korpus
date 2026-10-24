@@ -557,9 +557,7 @@ pub async fn import(
     match provider.get(&form.provider_id, lang).await {
         Ok(Some(p)) => {
             let id = foods::upsert_from_provider(&state.db, &p, lang).await?;
-            let url = ctx.url(&format!("/foods/{id}"));
-            let sep = if url.contains('?') { "&" } else { "?" };
-            Ok(see_other(&format!("{url}{sep}msg=imported_food")))
+            Ok(see_other(&ctx.url(&format!("/foods/{id}"))))
         }
         Ok(None) => render_status(
             StatusCode::NOT_FOUND,
@@ -613,9 +611,7 @@ async fn import_from_dataset(
     match crate::datasets::get(&state.db, dataset, code, lang).await? {
         Some(p) => {
             let id = foods::upsert_from_provider(&state.db, &p, lang).await?;
-            let url = ctx.url(&format!("/foods/{id}"));
-            let sep = if url.contains('?') { "&" } else { "?" };
-            Ok(see_other(&format!("{url}{sep}msg=imported_food")))
+            Ok(see_other(&ctx.url(&format!("/foods/{id}"))))
         }
         // The table was replaced or removed since the search.
         None => render_status(
