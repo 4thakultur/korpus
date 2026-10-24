@@ -11,11 +11,15 @@
 //! `foods` like a provider product, so diary entries keep working when a
 //! table is replaced or removed.
 //!
+//! One table, CIQUAL, is also shipped with Korpus and installed on first
+//! start (see [`bundled`]).
+//!
 //! Values are stored as published. The only conversions are kJ to kcal and
 //! sodium to salt, both recorded per food and explained in its notes.
 
 mod afcd;
 mod archive;
+mod bundled;
 mod ciqual;
 mod cnf;
 mod cofid;
@@ -34,11 +38,13 @@ use crate::providers::ProviderFood;
 use crate::ranking::{self, Candidate, Query};
 
 pub use archive::UploadFile;
+pub use bundled::{BUNDLED, Bundled, install_new as install_bundled};
+pub use ciqual::extract as ciqual_extract;
 pub use value::FoodBuilder;
 
-/// Largest file accepted for one dataset upload. The biggest supported
-/// download (USDA SR Legacy, zipped) is about 6 MB.
-pub const MAX_UPLOAD_BYTES: usize = 64 * 1024 * 1024;
+/// Largest upload accepted for one dataset. The biggest supported download
+/// is CIQUAL 2025, whose unzipped `compo_*.xml` is about 69 MB.
+pub const MAX_UPLOAD_BYTES: usize = 96 * 1024 * 1024;
 const PAGE_SIZE: usize = crate::foods::PAGE_SIZE;
 /// Upper bound on candidate rows considered for ranking one search.
 const SEARCH_CANDIDATES: i64 = 300;
@@ -125,9 +131,7 @@ impl Dataset {
     pub fn download_url(self) -> &'static str {
         match self {
             Dataset::Usda => "https://fdc.nal.usda.gov/download-datasets",
-            Dataset::Ciqual => {
-                "https://www.data.gouv.fr/fr/datasets/table-de-composition-nutritionnelle-des-aliments-ciqual/"
-            }
+            Dataset::Ciqual => "https://doi.org/10.57745/RDMHWY",
             Dataset::Cofid => {
                 "https://www.gov.uk/government/publications/composition-of-foods-integrated-dataset-cofid"
             }
@@ -146,7 +150,9 @@ impl Dataset {
             Dataset::Usda => lang.t(
                 "Download the CSV zip files for Foundation Foods and SR Legacy (and optionally FNDDS survey foods). You can upload several at once. Branded foods are not supported.",
             ),
-            Dataset::Ciqual => lang.t("Download the XML zip file of the Ciqual table."),
+            Dataset::Ciqual => lang.t(
+                "Download the XML files alim_….xml and compo_….xml and upload both at once (or the XML zip file of the 2020 release).",
+            ),
             Dataset::Cofid => lang.t(
                 "Download the Excel file of the Composition of Foods Integrated Dataset.",
             ),
@@ -161,13 +167,14 @@ impl Dataset {
             Dataset::Cofid | Dataset::Afcd => {
                 ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             }
-            Dataset::Usda | Dataset::Ciqual | Dataset::Cnf => ".zip,application/zip",
+            Dataset::Ciqual => ".xml,.zip,text/xml,application/xml,application/zip",
+            Dataset::Usda | Dataset::Cnf => ".zip,application/zip",
         }
     }
 
     /// The table is published as several files that are uploaded together.
     pub fn multiple_files(self) -> bool {
-        self == Dataset::Usda
+        matches!(self, Dataset::Usda | Dataset::Ciqual)
     }
 
     /// Languages its food names are published in, main language first.
@@ -307,8 +314,14 @@ fn unmask(mask: i64) -> Vec<Nutrient> {
 
 /// Replaces every food of `dataset` in one transaction, so a failed import
 /// leaves the previous version in place. A code listed twice keeps its first
-/// row. Returns the number of foods stored.
-pub async fn replace(db: &SqlitePool, dataset: Dataset, foods: &[DatasetFood]) -> AppResult<usize> {
+/// row. `bundled_version` is the release when the foods come from a table
+/// shipped with Korpus. Returns the number of foods stored.
+pub async fn replace(
+    db: &SqlitePool,
+    dataset: Dataset,
+    foods: &[DatasetFood],
+    bundled_version: Option<&str>,
+) -> AppResult<usize> {
     let mut seen = std::collections::HashSet::new();
     let foods: Vec<&DatasetFood> = foods.iter().filter(|f| seen.insert(&f.code)).collect();
     let mut tx = db.begin().await?;
@@ -317,13 +330,14 @@ pub async fn replace(db: &SqlitePool, dataset: Dataset, foods: &[DatasetFood]) -
         .execute(&mut *tx)
         .await?;
     sqlx::query(
-        "INSERT INTO datasets (id, food_count, imported_at) VALUES (?, ?, ?)
+        "INSERT INTO datasets (id, food_count, imported_at, bundled_version) VALUES (?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET food_count = excluded.food_count,
-             imported_at = excluded.imported_at",
+             imported_at = excluded.imported_at, bundled_version = excluded.bundled_version",
     )
     .bind(dataset.id())
     .bind(foods.len() as i64)
     .bind(now_utc())
+    .bind(bundled_version)
     .execute(&mut *tx)
     .await?;
     for f in &foods {
@@ -379,20 +393,24 @@ pub struct Installed {
     pub dataset: Dataset,
     pub food_count: i64,
     pub imported_at: String,
+    /// The bundled release, when the table was not imported from a file.
+    pub bundled_version: Option<String>,
 }
 
 pub async fn installed(db: &SqlitePool) -> AppResult<Vec<Installed>> {
-    let rows: Vec<(String, i64, String)> =
-        sqlx::query_as("SELECT id, food_count, imported_at FROM datasets ORDER BY id")
-            .fetch_all(db)
-            .await?;
+    let rows: Vec<(String, i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, food_count, imported_at, bundled_version FROM datasets ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
     Ok(rows
         .into_iter()
-        .filter_map(|(id, food_count, imported_at)| {
+        .filter_map(|(id, food_count, imported_at, bundled_version)| {
             Some(Installed {
                 dataset: Dataset::parse(&id)?,
                 food_count,
                 imported_at,
+                bundled_version,
             })
         })
         .collect())
@@ -588,6 +606,7 @@ mod tests {
                 dataset: *d,
                 food_count: 1,
                 imported_at: String::new(),
+                bundled_version: None,
             })
             .collect()
     }
@@ -650,7 +669,7 @@ mod tests {
         let mut with_duplicate = foods.clone();
         with_duplicate.push(food("1", &[(Lang::Fr, "Doublon")]));
         assert_eq!(
-            replace(&db, Dataset::Ciqual, &with_duplicate)
+            replace(&db, Dataset::Ciqual, &with_duplicate, None)
                 .await
                 .unwrap(),
             3
@@ -698,7 +717,9 @@ mod tests {
         );
 
         // Importing again replaces the whole table.
-        replace(&db, Dataset::Ciqual, &foods[2..]).await.unwrap();
+        replace(&db, Dataset::Ciqual, &foods[2..], None)
+            .await
+            .unwrap();
         assert!(
             get(&db, Dataset::Ciqual, "1", Lang::En)
                 .await
@@ -736,7 +757,7 @@ mod tests {
             })
             .collect();
         let db = crate::db::connect_memory().await.unwrap();
-        replace(&db, Dataset::Ciqual, &foods).await.unwrap();
+        replace(&db, Dataset::Ciqual, &foods, None).await.unwrap();
 
         let queries = fixture["queries"].as_array().unwrap();
         let (mut top1, mut top5) = (0, 0);

@@ -45,6 +45,11 @@ async fn run() -> Result<(), String> {
     let db = korpus::db::connect(&config.database_url)
         .await
         .map_err(|e| format!("could not open database: {e}"))?;
+    // A bundled table that cannot be installed must not keep the diary
+    // from starting; search then works without it.
+    if let Err(e) = korpus::datasets::install_bundled(&db).await {
+        tracing::error!(error = %e, "could not install bundled food tables");
+    }
     let providers = Providers::from_config(&config);
     let names: Vec<&str> = providers.all().iter().map(|p| p.name()).collect();
     tracing::info!(providers = ?names, "food providers enabled");
@@ -71,12 +76,44 @@ async fn run() -> Result<(), String> {
 const DATASET_USAGE: &str = "usage:
   korpus dataset list
   korpus dataset import <usda|ciqual|cofid|afcd|cnf> <file>...
-  korpus dataset remove <usda|ciqual|cofid|afcd|cnf>";
+  korpus dataset remove <usda|ciqual|cofid|afcd|cnf>
+  korpus dataset install-bundled ciqual
+  korpus dataset extract ciqual <alim_….xml> <compo_….xml>   (writes the bundled extract to stdout)";
 
 /// `korpus dataset …`: manages food composition tables from the command
 /// line, e.g. for scripted installs. Settings offers the same in the browser.
 async fn dataset_command(args: &[String]) -> Result<(), String> {
-    use korpus::datasets::{self, Dataset, UploadFile};
+    use korpus::datasets::{self, Bundled, Dataset, UploadFile};
+
+    let read_files = |paths: &[String]| -> Result<Vec<UploadFile>, String> {
+        let mut files = Vec::new();
+        for path in paths {
+            let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+            if bytes.len() > datasets::MAX_UPLOAD_BYTES {
+                return Err(format!("{path}: file is too large"));
+            }
+            files.push(UploadFile {
+                name: path.clone(),
+                bytes,
+            });
+        }
+        Ok(files)
+    };
+    // Needs no database: it prepares the file shipped in `bundled/`.
+    if args.first().map(String::as_str) == Some("extract") {
+        if args.get(1).map(String::as_str) != Some("ciqual") {
+            return Err(DATASET_USAGE.to_string());
+        }
+        let files = read_files(&args[2..])?;
+        let text = datasets::ciqual_extract(&files).map_err(|e| {
+            format!(
+                "{} ({e})",
+                e.message(Dataset::Ciqual, korpus::i18n::Lang::En)
+            )
+        })?;
+        print!("{text}");
+        return Ok(());
+    }
 
     let config = Config::from_env().map_err(|e| format!("configuration error: {e}"))?;
     let db = korpus::db::connect(&config.database_url)
@@ -92,7 +129,13 @@ async fn dataset_command(args: &[String]) -> Result<(), String> {
             let installed = datasets::installed(&db).await.map_err(|e| e.to_string())?;
             for d in Dataset::ALL {
                 let status = match installed.iter().find(|i| i.dataset == d) {
-                    Some(i) => format!("{} foods, imported {}", i.food_count, i.imported_at),
+                    Some(i) => match (&i.bundled_version, Bundled::get(d)) {
+                        (Some(_), Some(b)) => format!(
+                            "{} foods, {} included with Korpus, installed {}",
+                            i.food_count, b.label, i.imported_at
+                        ),
+                        _ => format!("{} foods, imported {}", i.food_count, i.imported_at),
+                    },
                     None => format!("not imported; download: {}", d.download_url()),
                 };
                 println!(
@@ -106,26 +149,27 @@ async fn dataset_command(args: &[String]) -> Result<(), String> {
         }
         Some("import") => {
             let d = dataset(args.get(1))?;
-            let mut files = Vec::new();
-            for path in &args[2..] {
-                let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-                if bytes.len() > datasets::MAX_UPLOAD_BYTES {
-                    return Err(format!("{path}: file is too large"));
-                }
-                files.push(UploadFile {
-                    name: path.clone(),
-                    bytes,
-                });
-            }
+            let files = read_files(&args[2..])?;
             let foods = tokio::task::spawn_blocking(move || d.parse_files(&files))
                 .await
                 .map_err(|e| e.to_string())?
                 .map_err(|e| format!("{} ({e})", e.message(d, lang)))?;
-            let stored = datasets::replace(&db, d, &foods)
+            let stored = datasets::replace(&db, d, &foods, None)
                 .await
                 .map_err(|e| e.to_string())?;
             println!("Imported {stored} foods from {}.", d.name());
             Ok(())
+        }
+        Some("install-bundled") => {
+            let d = dataset(args.get(1))?;
+            match Bundled::get(d) {
+                Some(b) => {
+                    let stored = b.install(&db).await.map_err(|e| e.to_string())?;
+                    println!("Installed {stored} foods from {}.", b.label);
+                    Ok(())
+                }
+                None => Err(format!("{} is not included with Korpus.", d.name())),
+            }
         }
         Some("remove") => {
             let d = dataset(args.get(1))?;

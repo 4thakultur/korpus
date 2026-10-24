@@ -91,6 +91,10 @@ pub fn router(state: AppState) -> Router {
         .route("/settings/diary.csv", get(settings::export_csv))
         .route("/settings/backup.sqlite", get(settings::backup))
         .route("/settings/datasets/{id}/remove", post(settings::remove_dataset))
+        .route(
+            "/settings/datasets/{id}/bundled",
+            post(settings::install_bundled_dataset),
+        )
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
         .route("/healthz", get(|| async { "ok" }))

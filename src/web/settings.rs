@@ -14,7 +14,7 @@ use super::{
 };
 use crate::backup::{self, Export, MAX_IMPORT_BYTES};
 use crate::countries::{self, CountryOption};
-use crate::datasets::{self, Dataset, UploadFile};
+use crate::datasets::{self, Bundled, Dataset, UploadFile};
 use crate::error::{AppError, AppResult};
 use crate::forms::FieldErrors;
 use crate::i18n::Lang;
@@ -178,6 +178,8 @@ pub struct DatasetView {
     pub multiple: bool,
     /// Number of foods and import date, when imported.
     pub status: Option<String>,
+    /// The release shipped with Korpus, when it is not the one in place.
+    pub bundled_offer: Option<&'static str>,
     /// Search uses this table.
     pub active: bool,
     /// The preferred table for the profile's country.
@@ -213,11 +215,22 @@ async fn dataset_views(
             accept: d.accept(),
             multiple: d.multiple_files(),
             status: installed.iter().find(|i| i.dataset == *d).map(|i| {
-                lang.f(
-                    "{0} foods, imported {1}",
-                    &[&i.food_count, &i.imported_at.get(..10).unwrap_or("")],
-                )
+                let date = i.imported_at.get(..10).unwrap_or("");
+                match (&i.bundled_version, Bundled::get(*d)) {
+                    (Some(_), Some(b)) => lang.f(
+                        "{0} foods, {1} included with Korpus, installed {2}",
+                        &[&i.food_count, &b.label, &date],
+                    ),
+                    _ => lang.f("{0} foods, imported {1}", &[&i.food_count, &date]),
+                }
             }),
+            bundled_offer: Bundled::get(*d)
+                .filter(|b| {
+                    !installed
+                        .iter()
+                        .any(|i| i.dataset == *d && i.bundled_version.as_deref() == Some(b.version))
+                })
+                .map(|b| b.label),
             active: active == Some(*d),
             preferred: country.is_some() && order[0] == *d,
             error: error
@@ -525,7 +538,7 @@ pub async fn import_dataset(
     };
     match parsed {
         Ok(foods) => {
-            let stored = datasets::replace(&state.db, dataset, &foods).await?;
+            let stored = datasets::replace(&state.db, dataset, &foods, None).await?;
             tracing::info!(dataset = dataset.id(), foods = stored, "dataset imported");
             Ok(see_other("/settings?msg=dataset_imported#datasets-heading"))
         }
@@ -543,6 +556,23 @@ pub async fn import_dataset(
             render_status(StatusCode::UNPROCESSABLE_ENTITY, &page)
         }
     }
+}
+
+/// Installs the release of a table shipped with Korpus, replacing the one in
+/// place.
+pub async fn install_bundled_dataset(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> AppResult<Response> {
+    let dataset = dataset_from_path(&id)?;
+    let bundled = Bundled::get(dataset).ok_or(AppError::NotFound)?;
+    let stored = bundled.install(&state.db).await?;
+    tracing::info!(
+        dataset = dataset.id(),
+        foods = stored,
+        "bundled dataset installed"
+    );
+    Ok(see_other("/settings?msg=dataset_imported#datasets-heading"))
 }
 
 /// Removes an imported table. Foods already saved from it are kept.

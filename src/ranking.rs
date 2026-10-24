@@ -21,7 +21,8 @@
 //!
 //! The weights were tuned on 100 common French product queries
 //! (`tests/fixtures/off_ranking.json`) and 51 generic food queries
-//! (`tests/fixtures/ciqual_ranking.json`); halving or doubling any one of
+//! (`tests/fixtures/ciqual_ranking.json`, plus basic foods against the
+//! bundled Ciqual 2025 table in `datasets::bundled`); halving or doubling any one of
 //! the product weights changes top-1 accuracy by at most a few queries.
 
 use crate::foods::normalize;
@@ -55,6 +56,12 @@ const DESCRIPTORS: &[&str] = &[
     "cuites",
     "pulpe",
     "peau",
+    // Ciqual 2025 names the edible part: "Pomme, chair sans peau, crue".
+    "chair",
+    "sans",
+    "flesh",
+    "without",
+    "skin",
     "viande",
     "nature",
     "standard",
@@ -80,6 +87,10 @@ const DESCRIPTORS: &[&str] = &[
 /// Markers of a table's default entry for a kind of food.
 const GENERIC_MARKERS: &[&[&str]] = &[
     &["aliment", "moyen"],
+    // Ciqual's English names: "Potato, cooked (average food)", "Milk,
+    // whole (average)".
+    &["average", "food"],
+    &["average"],
     &["sans", "precision"],
     &["not", "further", "specified"],
     &["nfs"],

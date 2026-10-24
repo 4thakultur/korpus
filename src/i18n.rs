@@ -1443,9 +1443,34 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
         "Archivo descargado",
     ),
     (
-        "Download the XML zip file of the Ciqual table.",
-        "Téléchargez le fichier zip XML de la table Ciqual.",
-        "Descargue el archivo zip XML de la tabla Ciqual.",
+        "Download the XML files alim_….xml and compo_….xml and upload both at once (or the XML zip file of the 2020 release).",
+        "Téléchargez les fichiers XML alim_….xml et compo_….xml et envoyez-les ensemble (ou le fichier zip XML de la version 2020).",
+        "Descargue los archivos XML alim_….xml y compo_….xml y súbalos juntos (o el archivo zip XML de la versión 2020).",
+    ),
+    (
+        "{0} foods, {1} included with Korpus, installed {2}",
+        "{0} aliments, {1} incluse avec Korpus, installée le {2}",
+        "{0} alimentos, {1} incluida con Korpus, instalada el {2}",
+    ),
+    (
+        "Use {0}, included with Korpus",
+        "Utiliser {0}, incluse avec Korpus",
+        "Usar {0}, incluida con Korpus",
+    ),
+    (
+        "No download needed. Or import the publisher's files below, for example a newer release.",
+        "Aucun téléchargement nécessaire. Vous pouvez aussi importer ci-dessous les fichiers de l'éditeur, par exemple une version plus récente.",
+        "No hace falta descargar nada. También puede importar abajo los archivos del editor, por ejemplo una versión más reciente.",
+    ),
+    (
+        "Generic foods such as fruit, eggs or milk are not included: no food composition table is installed.",
+        "Les aliments génériques comme les fruits, les œufs ou le lait ne sont pas inclus : aucune table de composition n'est installée.",
+        "Los alimentos genéricos como fruta, huevos o leche no se incluyen: no hay ninguna tabla de composición instalada.",
+    ),
+    (
+        "Add a table in Settings",
+        "Ajouter une table dans les Paramètres",
+        "Añadir una tabla en Ajustes",
     ),
     (
         "Remove {0}? Foods you already saved from it are kept.",

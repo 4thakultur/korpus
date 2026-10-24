@@ -169,6 +169,8 @@ pub struct SearchPage {
     pub next_if_more_url: Option<String>,
     pub attributions: Vec<Attribution>,
     pub create_url: String,
+    /// No food composition table is installed, so generic foods are missing.
+    pub no_table: bool,
     pub message: Option<&'static str>,
 }
 
@@ -292,20 +294,22 @@ pub async fn page(
         .collect();
     let mut attributions = Vec::new();
     let mut has_more = local.has_more;
+    let country = crate::profile::country(&state.db).await?;
+    let table = datasets::active(&state.db, country).await?;
     // Barcodes are for packaged products, which the tables do not hold.
-    if !q.is_empty() && !is_valid_barcode(&normalize_barcode(&q)) {
-        let country = crate::profile::country(&state.db).await?;
-        if let Some(d) = datasets::active(&state.db, country).await? {
-            let found = datasets::search(&state.db, d, &q, page, lang).await?;
-            if !found.foods.is_empty() {
-                attributions.push(Attribution {
-                    text: d.attribution(lang),
-                    url: d.download_url(),
-                });
-            }
-            items.extend(found.foods.iter().map(|f| remote_item(f, lang)));
-            has_more |= found.has_more;
+    if !q.is_empty()
+        && !is_valid_barcode(&normalize_barcode(&q))
+        && let Some(d) = table
+    {
+        let found = datasets::search(&state.db, d, &q, page, lang).await?;
+        if !found.foods.is_empty() {
+            attributions.push(Attribution {
+                text: d.attribution(lang),
+                url: d.download_url(),
+            });
         }
+        items.extend(found.foods.iter().map(|f| remote_item(f, lang)));
+        has_more |= found.has_more;
     }
     let mut errors = Vec::new();
     if inline_remote {
@@ -351,6 +355,7 @@ pub async fn page(
             attributions
         },
         create_url: create_url(&q, &ctx),
+        no_table: table.is_none() && !q.is_empty(),
         message: flash_message(sq.msg.as_deref(), lang),
         q,
         ctx,

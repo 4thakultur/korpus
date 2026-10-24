@@ -34,6 +34,7 @@
   </ul>
   {% if pending_src.is_some() %}<p class="js-only loading" id="results-loading">{{ lang.t("Searching food databases…") }}</p>{% endif %}
   <p class="list-empty card" id="no-results"{% if !items.is_empty() || pending_src.is_some() %} hidden{% endif %}>{% if q.is_empty() %}{{ lang.t("Foods you add to your diary will appear here.") }}{% else %}{{ lang.t("No results.") }}{% endif %}</p>
+  {% if no_table %}<p class="note section-note">{{ lang.t("Generic foods such as fruit, eggs or milk are not included: no food composition table is installed.") }} <a href="/settings#datasets-heading">{{ lang.t("Add a table in Settings") }}</a></p>{% endif %}
   <div id="results-errors">{% for e in errors %}<p class="warning" role="alert"><span aria-hidden="true">⚠</span> {{ e }} {{ lang.t("Your own foods still work.") }}</p>{% endfor %}</div>
   {% if prev_url.is_some() || next_url.is_some() || next_if_more_url.is_some() %}
   <nav class="pager" aria-label="{{ lang.t("Result pages") }}">

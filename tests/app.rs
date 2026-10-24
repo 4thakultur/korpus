@@ -1242,6 +1242,7 @@ async fn country_picks_the_food_composition_table() {
             &[(Lang::Fr, "Pomme, crue"), (Lang::En, "Apple, raw")],
             false,
         )],
+        None,
     )
     .await
     .unwrap();
@@ -1256,6 +1257,7 @@ async fn country_picks_the_food_composition_table() {
             ],
             true,
         )],
+        None,
     )
     .await
     .unwrap();
@@ -1403,6 +1405,10 @@ async fn food_tables_are_imported_from_settings_uploads() {
         .await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(r.body.contains("id=\"dataset-ciqual-error\""));
+    assert!(r.body.contains("The upload does not contain alim_"));
+    let r = a
+        .upload("/settings/datasets/ciqual", &[("XML_2020.zip", b"hello")])
+        .await;
     assert!(r.body.contains("could not be opened"));
     let r = a.upload("/settings/datasets/cofid", &[]).await;
     assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1481,4 +1487,48 @@ async fn foods_page_lists_logged_foods_and_history_can_be_cleared() {
     )
     .await;
     assert!(a.get("/search").await.body.contains("Rolled oats"));
+}
+
+#[tokio::test]
+async fn bundled_table_can_be_installed_and_search_says_when_none_is() {
+    let a = app().await;
+    a.setup().await;
+    let page = a.get("/search?q=oeuf").await;
+    assert!(page.body.contains("no food composition table is installed"));
+    assert!(page.body.contains("href=\"/settings#datasets-heading\""));
+    assert!(
+        !a.get("/search")
+            .await
+            .body
+            .contains("no food composition table"),
+        "not on the history list"
+    );
+    let settings = a.get("/settings").await;
+    assert!(
+        settings
+            .body
+            .contains("Use Ciqual 2025, included with Korpus")
+    );
+
+    let r = a.post("/settings/datasets/ciqual/bundled", "").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let settings = a.get("/settings").await;
+    assert!(settings.body.contains("Ciqual 2025 included with Korpus"));
+    assert!(
+        !settings
+            .body
+            .contains("Use Ciqual 2025, included with Korpus")
+    );
+    let page = a.get("/search?q=oeuf").await;
+    assert!(!page.body.contains("no food composition table is installed"));
+    assert!(
+        page.body.contains(&import_field("ciqual", "22000")),
+        "Oeuf cru"
+    );
+
+    assert_eq!(
+        a.post("/settings/datasets/cofid/bundled", "").await.status,
+        StatusCode::NOT_FOUND,
+        "only bundled tables"
+    );
 }

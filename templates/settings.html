@@ -68,6 +68,12 @@
     {% if let Some(e) = d.error %}<p class="field-error" role="alert" id="dataset-{{ d.id }}-error">{{ e }}</p>{% endif %}
     <details{% if d.error.is_some() || (d.preferred && d.status.is_none()) %} open{% endif %}>
       <summary>{% if d.status.is_some() %}{{ lang.t("Update or remove") }}{% else %}{{ lang.t("Import") }}{% endif %}</summary>
+      {% if let Some(label) = d.bundled_offer %}
+      <form method="post" action="/settings/datasets/{{ d.id }}/bundled" class="dataset-bundled">
+        <button type="submit" class="block">{{ lang.f1("Use {0}, included with Korpus", label) }}</button>
+        <p class="hint">{{ lang.t("No download needed. Or import the publisher's files below, for example a newer release.") }}</p>
+      </form>
+      {% endif %}
       <form method="post" action="/settings/datasets/{{ d.id }}" enctype="multipart/form-data">
         <div class="field">
           <label for="dataset-{{ d.id }}-file">{% if d.multiple %}{{ lang.t("Downloaded files") }}{% else %}{{ lang.t("Downloaded file") }}{% endif %}</label>
@@ -84,7 +90,7 @@
     </details>
   </article>
   {% endfor %}
-  <p class="section-note">{{ lang.t("Files are read on this server, and searching these tables never contacts their publishers. Tables can also be imported from the command line, for example:") }} <code>korpus dataset import ciqual XML_2020_07_07.zip</code></p>
+  <p class="section-note">{{ lang.t("Files are read on this server, and searching these tables never contacts their publishers. Tables can also be imported from the command line, for example:") }} <code>korpus dataset import ciqual alim_2025_11_03.xml compo_2025_11_03.xml</code></p>
 </section>
 
 <section class="section" aria-labelledby="providers-heading">

@@ -7,6 +7,7 @@ COPY src ./src
 COPY migrations ./migrations
 COPY templates ./templates
 COPY static ./static
+COPY bundled ./bundled
 RUN cargo build --release --locked && strip target/release/korpus
 
 FROM debian:bookworm-slim

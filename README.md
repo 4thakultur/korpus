@@ -6,7 +6,7 @@ track your weight and set a calorie target if you want one.
 
 - **Private.** Your diary, weight and profile stay in one SQLite file on your server. There is no analytics, tracking or AI.
 - **Works offline from providers.** Products are looked up in [Open Food Facts](https://world.openfoodfacts.org) when it's enabled. Your own foods, your diary and everything else work when it is down or turned off.
-- **National food tables, searched locally.** Import the official food composition table for your country (France, UK, USA, Canada or Australia). Korpus picks the one that fits the country set in your profile. Generic foods such as "apple, raw" then come with laboratory values, and searching them never leaves your server.
+- **National food tables, searched locally.** The French table Ciqual 2025 is included and installed on first start, so fruit, vegetables, eggs or milk can be found without picking a brand. You can also import the official table for your country (France, UK, USA, Canada or Australia). Korpus picks the one that fits the country set in your profile. Generic foods such as "apple, raw" then come with laboratory values, and searching them never leaves your server.
 - **Honest data.** Every food shows where its values come from. Missing values are flagged and never made up. Past diary days never change when you edit or delete a food.
 - **English, French and Spanish.** The interface follows your browser's language or the one you pick in Settings. Food names are never machine-translated: product databases are searched in your language and return the names written in it.
 - **Lightweight.** One Rust binary with server-rendered HTML and about 6 KB of optional JavaScript.
@@ -209,14 +209,26 @@ share-alike and attribution terms apply to that data. See
 ## Food composition tables
 
 Open Food Facts covers packaged products well but generic foods poorly. For
-those, Korpus can import the official national food composition tables.
-These are measured or officially compiled values with stable codes. You
+those, Korpus uses the official national food composition tables.
+
+**Included: Ciqual 2025.** Korpus ships an extract of the French ANSES-CIQUAL
+2025 table: 3,484 generic foods with French and English names. It is installed
+the first time Korpus starts, and is used whenever no table that better fits
+your country is imported (see the order below). It is installed only once. If
+you remove it in Settings, it stays removed. If you imported CIQUAL yourself,
+your import is never replaced. **Settings → Food composition tables → Use Ciqual
+2025, included with Korpus** (or `korpus dataset install-bundled ciqual`)
+installs it again. The extract, its source, its licence and what it leaves out
+are described in [`bundled/ciqual/README.md`](bundled/ciqual/README.md).
+
+The other tables, and newer CIQUAL releases, are imported from the
+publisher's files. These are measured or officially compiled values with stable codes. You
 download each file once from its publisher and import it. Korpus then
 searches it in its own database, so no search ever leaves your server.
 
 | Table | Country | Download | Licence |
 |---|---|---|---|
-| ANSES-CIQUAL (2020) | France | [XML zip](https://www.data.gouv.fr/fr/datasets/table-de-composition-nutritionnelle-des-aliments-ciqual/) | Licence Ouverte / Etalab |
+| ANSES-CIQUAL (2025 included; 2020 or later) | France | [`alim_*.xml` and `compo_*.xml`](https://doi.org/10.57745/RDMHWY), or the 2020 XML zip | Licence Ouverte / Etalab 2.0 |
 | CoFID, McCance and Widdowson's (2021) | United Kingdom | [Excel file](https://www.gov.uk/government/publications/composition-of-foods-integrated-dataset-cofid) | Open Government Licence v3.0 |
 | USDA FoodData Central | United States | [Foundation Foods and SR Legacy CSV zips](https://fdc.nal.usda.gov/download-datasets) | Public domain (CC0 1.0) |
 | Canadian Nutrient File (2015) | Canada | [CSV zip](https://www.canada.ca/en/health-canada/services/food-nutrition/healthy-eating/nutrient-data/canadian-nutrient-file-2015-download-files.html) | Open Government Licence – Canada |
@@ -227,7 +239,7 @@ exactly as downloaded (for USDA, upload the Foundation and SR Legacy zips
 together). Or use the command line, for example for scripted installs:
 
 ```sh
-korpus dataset import ciqual XML_2020_07_07.zip
+korpus dataset import ciqual alim_2025_11_03.xml compo_2025_11_03.xml
 korpus dataset import usda FoodData_Central_foundation_food_csv_*.zip FoodData_Central_sr_legacy_food_csv_*.zip
 korpus dataset list
 korpus dataset remove cnf
@@ -235,6 +247,7 @@ korpus dataset remove cnf
 # With Docker Compose, copy the file into the container first:
 docker compose cp XML_2020_07_07.zip korpus:/tmp/
 docker compose exec korpus korpus dataset import ciqual /tmp/XML_2020_07_07.zip
+docker compose exec korpus korpus dataset install-bundled ciqual
 ```
 
 Importing a table again replaces it in one transaction; if the file is wrong,
@@ -268,7 +281,7 @@ conversion:
 - Energy published only in kJ (AFCD, and the rare food elsewhere) is converted with 1 kcal = 4.184 kJ.
 - Salt published only as sodium is calculated as sodium × 2.5.
 - USDA and CNF carbohydrate is the North American "total by difference", which **includes fibre**, unlike European labels. It is kept as published and noted.
-- Values published as "traces" or below a detection limit ("< 0.5", "Tr") are recorded as 0 and listed. Values marked not determined ("-", "N") stay missing. CIQUAL 2020, for example, publishes no energy value for about 900 foods, and Korpus shows them as missing rather than computing one.
+- Values published as "traces" or below a detection limit ("< 0.5", "Tr") are recorded as 0 and listed. Values marked not determined ("-", "N") stay missing. CIQUAL 2020, for example, publishes no energy value for about 900 foods (CIQUAL 2025 for about 150), and Korpus shows them as missing rather than computing one.
 - Invalid values (negative, or impossible per 100 g) are dropped and listed, as for any provider. Carbohydrate and sugars may reach 106 g per 100 g, because UK tables express sugars as monosaccharide equivalents (100 g of sucrose is 105.3 g).
 
 **Not supported yet.** Germany's BLS 4.0, the Netherlands' NEVO and
@@ -281,7 +294,8 @@ imported; Open Food Facts covers packaged products.
 **Licences.** Each table's attribution is shown in Settings, next to search
 results that come from it and on every food saved from it. The data is
 yours to use under those licences. If you redistribute a database that
-contains imported tables, include their attribution.
+contains imported tables, include their attribution. The bundled Ciqual
+extract is under the Licence Ouverte 2.0, not under Korpus's code licence.
 
 ## Backup and restore
 
