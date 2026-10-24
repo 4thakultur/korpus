@@ -149,6 +149,9 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: var(-
 body {
   margin: 0;
   min-height: 100vh;
+  /* On a home-screen web app the page can reach behind the status bar and
+     Dynamic Island; keep content below them (0 elsewhere). */
+  padding-top: env(safe-area-inset-top);
   font-family: var(--font);
   font-size: 1.0625rem;       /* 17px, iOS body */
   line-height: 1.35;
@@ -275,7 +278,9 @@ body.has-tabs { padding-bottom: calc(var(--tabbar-h) + 32px + env(safe-area-inse
 }
 
 .site-footer {
-  max-width: 44rem; margin: 0 auto; padding: 0 var(--gutter) 32px;
+  max-width: 44rem; margin: 0 auto;
+  padding: 0 max(var(--gutter), env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom))
+    max(var(--gutter), env(safe-area-inset-left));
   color: var(--label-2); font-size: 0.75rem; text-align: center;
 }
 

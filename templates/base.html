@@ -4,6 +4,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Korpus">
 <meta name="color-scheme" content="{{ ui_theme.color_scheme() }}">
 {% match ui_theme %}{% when crate::web::Theme::Light %}<meta name="theme-color" content="#f2f2f7">{% when crate::web::Theme::Dark %}<meta name="theme-color" content="#000000">{% else %}<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">{% endmatch %}
