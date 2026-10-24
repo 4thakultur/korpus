@@ -119,6 +119,26 @@
 
   <section class="section" aria-labelledby="macro-heading">
     <div class="section-head"><h2 id="macro-heading">{{ lang.t("Macronutrient goals") }} <span class="opt">{{ lang.t("(optional)") }}</span></h2></div>
+    <fieldset id="macro_mode">
+      <legend>{{ lang.t("How should your macronutrient goals be set?") }}</legend>
+      <div class="choices on-bg">
+        <label><input type="radio" name="macro_mode" value="estimate"{% if form.macro_mode == "estimate" %} checked{% endif %}><span class="choice-text">{{ lang.t("Estimate from my daily target, goal and weight") }}</span>{% include "_check.html" %}</label>
+        <label><input type="radio" name="macro_mode" value="custom"{% if form.macro_mode != "estimate" %} checked{% endif %}><span class="choice-text">{{ lang.t("Set my own goals") }}</span>{% include "_check.html" %}</label>
+      </div>
+      {% if let Some(e) = errors.get("macro_mode") %}<p class="field-error group-foot">{{ e }}</p>{% endif %}
+    </fieldset>
+    {% if let Some(m) = macro_plan %}
+    <div class="card estimate" aria-labelledby="macro-result">
+      <h3 id="macro-result">{{ lang.t("Estimate for a day without recorded activity") }}</h3>
+      <dl class="facts">
+        <div class="c-protein"><dt class="macro-label"><span class="dot" aria-hidden="true"></span>{{ m.protein_label }}</dt><dd><strong>{{ m.protein }} g</strong> · {{ m.protein_basis }}</dd></div>
+        <div class="c-fat"><dt class="macro-label"><span class="dot" aria-hidden="true"></span>{{ m.fat_label }}</dt><dd><strong>{{ m.fat }} g</strong> · {{ lang.t("30% of energy") }}</dd></div>
+        <div class="c-carbs"><dt class="macro-label"><span class="dot" aria-hidden="true"></span>{{ m.carbs_label }}</dt><dd><strong>{{ m.carbs }} g</strong> · {{ lang.t("the rest of the energy") }}</dd></div>
+      </dl>
+      {% if m.protein_limited %}<p class="note">{{ lang.t("Protein was limited to 35% of your energy target, so there is room for carbohydrate.") }}</p>{% endif %}
+      <p class="subtle">{{ lang.t("Steps and sport recorded for a day add their energy to that day's carbohydrate goal, the main fuel of exercise.") }}</p>
+    </div>
+    {% endif %}
     <div class="group">
     {% for mf in self.macro_fields() %}{% let id = mf.id %}{% let label = mf.label %}{% let value = mf.value.as_str() %}
       <div class="form-row c-{{ id.trim_end_matches("_goal") }}">

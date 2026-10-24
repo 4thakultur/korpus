@@ -42,6 +42,7 @@
   --carbs: #ff9500;    --carbs-text: #b45309;
   --fat: #32ade6;      --fat-text: #00739a;
   --weight: #af52de;   --weight-text: #8e3fc7;
+  --activity: #00c7be; --activity-text: #00756f;
 
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Segoe UI Variable Text",
     "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -97,6 +98,7 @@
     --carbs: #ff9f0a;    --carbs-text: #ff9f0a;
     --fat: #40c8e0;      --fat-text: #40c8e0;
     --weight: #bf5af2;   --weight-text: #bf5af2;
+    --activity: #63e6e2; --activity-text: #63e6e2;
   }
 }
 :root[data-theme="dark"] {
@@ -134,6 +136,7 @@
   --carbs: #ff9f0a;    --carbs-text: #ff9f0a;
   --fat: #40c8e0;      --fat-text: #40c8e0;
   --weight: #bf5af2;   --weight-text: #bf5af2;
+  --activity: #63e6e2; --activity-text: #63e6e2;
 }
 
 /* One class per nutrient sets --c / --c-text for any component inside. */
@@ -142,6 +145,7 @@
 .c-carbs { --c: var(--carbs); --c-text: var(--carbs-text); }
 .c-fat { --c: var(--fat); --c-text: var(--fat-text); }
 .c-weight { --c: var(--weight); --c-text: var(--weight-text); }
+.c-activity { --c: var(--activity); --c-text: var(--activity-text); }
 
 /* ---------- Base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
@@ -335,6 +339,7 @@ a.row:active, button.row:active { background: var(--fill-strong); }
 .row-sub { font-size: 0.9375rem; color: var(--label-2); overflow-wrap: anywhere; }
 .row-value { flex: none; text-align: right; color: var(--label-2); font-variant-numeric: tabular-nums; }
 .row-value strong { color: var(--label); font-weight: 600; }
+.row-value .row-sub { display: block; font-size: 0.8125rem; }
 .chevron { width: 8px; height: 14px; color: var(--label-2); opacity: 0.6; }
 .list-empty { margin: 0; padding: 14px 16px; color: var(--label-2); }
 .add-row { color: var(--tint); font-weight: 400; }
@@ -723,6 +728,9 @@ dialog.alert::backdrop { background: rgba(0, 0, 0, 0.4); animation: alert-fade 0
 .energy-text .remaining { margin-top: 6px; }
 .energy-text .remaining strong { color: var(--energy-text); font-family: var(--font-rounded); font-size: 1.0625rem; }
 .energy-text .goal-link { margin-top: 6px; }
+.energy-text .steps-bonus { margin-top: 6px; font-size: 0.875rem; }
+.steps-bonus + .steps-bonus { margin-top: 2px; }
+.steps-bonus a { display: inline-flex; align-items: center; gap: 6px; color: var(--c-text); font-weight: 600; }
 
 .macros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0 16px; padding: 0; text-align: center; }
 .macros > div { min-width: 0; display: flex; flex-direction: column; align-items: center; }
@@ -888,6 +896,42 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .chart .line { fill: none; stroke: var(--weight); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; }
 .chart .dot-mark { fill: var(--card); stroke: var(--weight); stroke-width: 2.5; }
 .chart figcaption { font-size: 0.8125rem; color: var(--label-2); margin-top: 12px; }
+
+/* ---------- Activity ---------- */
+.steps-card .eyebrow { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 0.9375rem; font-weight: 600; color: var(--c-text); }
+.steps-card .energy { margin: 4px 0 16px; }
+.steps-card .ring .ring-track, .steps-card .ring .ring-value { stroke: var(--activity); }
+.steps-card .energy-text .remaining strong { color: var(--activity-text); }
+.steps-card > .hint { margin: 12px 0 0; }
+.sport-kcal { color: var(--c-text); font-weight: 600; }
+.steps-form > label { display: block; margin: 0 0 8px; font-size: 0.9375rem; color: var(--label-2); }
+.steps-entry { display: flex; gap: 8px; }
+.steps-entry input { flex: 1; min-width: 0; font-family: var(--font-rounded); font-size: 1.25rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.steps-entry button { flex: none; }
+.steps-form .field-error { margin: 6px 0 0; }
+.steps-reset { margin: 8px 0 0; }
+.steps-reset button { margin-left: -8px; color: var(--danger); }
+.repeat-line { display: flex; align-items: center; gap: 4px; }
+.repeat-line svg { width: 14px; height: 14px; flex: none; }
+/* Sport icons (static/sports.svg); hairlines start after them, as in iOS. */
+.sport-icon { width: 24px; height: 24px; flex: none; }
+.row > .sport-icon { color: var(--activity-text); }
+.list li:has(> .row > .sport-icon) + li::before { left: 52px; }
+.menu .sport-icon { width: 20px; height: 20px; }
+.menu-value .sport-icon { width: 20px; height: 20px; margin-right: 6px; vertical-align: -5px; }
+.skip-form { margin: 0 0 12px; }
+/* Weekday toggles: round buttons, filled when chosen. */
+.weekdays { display: flex; gap: 6px; justify-content: space-between; }
+.weekdays label { position: relative; flex: 1 1 0; min-width: 0; max-width: 48px; display: flex; }
+.weekdays input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.weekdays span[aria-hidden] {
+  flex: 1; display: grid; place-items: center; aspect-ratio: 1; min-height: 36px; border-radius: 50%;
+  background: var(--fill); color: var(--label); font-size: 0.8125rem; font-weight: 600;
+}
+.weekdays input:checked + span { background: var(--tint); color: var(--on-tint); }
+.weekdays input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 2px; }
+.date-clear { min-width: 36px; min-height: 36px; padding: 0; border-radius: 50%; background: var(--fill); color: var(--label-2); }
+.date-clear svg { width: 14px; height: 14px; }
 .change { display: block; font-size: 0.8125rem; color: var(--label-2); }
 
 /* ---------- Settings ---------- */

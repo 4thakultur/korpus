@@ -99,6 +99,11 @@ pub fn parse_date(s: &str) -> Option<Date> {
 }
 
 fn weekday_name(d: Date, lang: Lang) -> &'static str {
+    weekday_long(usize::from(d.weekday().to_monday_zero_offset() as u8), lang)
+}
+
+/// Full weekday name; `index` 0 is Monday, 6 is Sunday.
+pub fn weekday_long(index: usize, lang: Lang) -> &'static str {
     const NAMES: [[&str; 7]; 3] = [
         [
             "Monday",
@@ -122,7 +127,17 @@ fn weekday_name(d: Date, lang: Lang) -> &'static str {
             "domingo",
         ],
     ];
-    NAMES[lang_index(lang)][usize::from(d.weekday().to_monday_zero_offset() as u8)]
+    NAMES[lang_index(lang)][index % 7]
+}
+
+/// Abbreviated weekday name; `index` 0 is Monday, 6 is Sunday.
+pub fn weekday_short(index: usize, lang: Lang) -> &'static str {
+    const NAMES: [[&str; 7]; 3] = [
+        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."],
+        ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"],
+    ];
+    NAMES[lang_index(lang)][index % 7]
 }
 
 fn month_name(d: Date, lang: Lang, short: bool) -> &'static str {

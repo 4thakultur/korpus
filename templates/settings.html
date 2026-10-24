@@ -13,6 +13,24 @@
   </form>
 </section>
 
+<section class="section" aria-labelledby="activity-heading">
+  <div class="section-head"><h2 id="activity-heading">{{ lang.t("Activity") }}</h2></div>
+  <form method="post" action="/settings/steps" data-autosave data-saved="{{ lang.t("Step goal saved.") }}">
+    <div class="group">
+      <div class="form-row">
+        <label for="step_goal">{{ lang.t("Daily step goal") }}</label>
+        <div class="control amount-input">
+          <input type="text" id="step_goal" name="step_goal" value="{{ step_goal }}" inputmode="numeric" required autocomplete="off" aria-describedby="step-goal-hint{% if errors.has("step_goal") %} step_goal-error{% endif %}" {% if errors.has("step_goal") %}aria-invalid="true"{% endif %}>
+        </div>
+        {% if let Some(e) = errors.get("step_goal") %}<p class="field-error" id="step_goal-error">{{ e }}</p>{% endif %}
+      </div>
+    </div>
+    <p class="group-foot" id="step-goal-hint">{{ lang.t("Steps that fill the ring on the Activity tab.") }}</p>
+    <button type="submit" class="primary block js-hidden">{{ lang.t("Save") }}</button>
+    <div class="autosave-status" role="status" data-autosave-status></div>
+  </form>
+</section>
+
 <section class="section" aria-labelledby="account-heading">
   <div class="section-head"><h2 id="account-heading">{{ lang.t("Account") }}</h2></div>
   <div class="list">
@@ -62,7 +80,7 @@
         <input type="file" id="file" name="file" accept="application/json,.json" required aria-describedby="file-hint{% if import_error.is_some() %} import-error{% endif %}" {% if import_error.is_some() %}aria-invalid="true"{% endif %}>
       </div>
     </div>
-    <p class="group-foot" id="file-hint">{{ lang.t("Only possible while this installation has no foods, diary entries or weights.") }}</p>
+    <p class="group-foot" id="file-hint">{{ lang.t("Only possible while this installation has no foods, diary entries, weights or activity.") }}</p>
     <button type="submit" class="block">{{ lang.t("Import") }}</button>
   </form>
 </section>

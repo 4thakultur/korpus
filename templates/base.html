@@ -23,6 +23,7 @@
       data-t-cancel="{{ lang.t("Cancel") }}" data-t-delete="{{ lang.t("Delete") }}"
       data-t-today="{{ lang.t("Today") }}" data-t-choose-date="{{ lang.t("Choose a date") }}"
       data-t-prev-month="{{ lang.t("Previous month") }}" data-t-next-month="{{ lang.t("Next month") }}"
+      data-t-clear="{{ lang.t("Clear") }}"
       data-t-save-error="{{ lang.t("Could not save. Check your connection and try again.") }}"
       data-t-choose-file="{{ lang.t("Choose file") }}" data-t-no-file="{{ lang.t("No file chosen") }}"
       data-t-files="{{ lang.f1("{0} files", "{n}") }}"
@@ -33,6 +34,7 @@
   <ul>
     <li><a href="/diary"{% if nav == "diary" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="16" rx="3.5"/><path d="M3.5 9.5h17M8 2.75v3.5M16 2.75v3.5"/><path d="M8 13.5h3M8 16.5h6"/></svg><span>{{ lang.t("Diary") }}</span></a></li>
     <li><a href="/search"{% if nav == "foods" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.75-4.75"/></svg><span>{{ lang.t("Foods") }}</span></a></li>
+    <li><a href="/activity"{% if nav == "activity" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.75 12.5h4l2.5-6.5 5 13 2.75-6.5h4.25"/></svg><span>{{ lang.t("Activity") }}</span></a></li>
     <li><a href="/weight"{% if nav == "weight" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><path d="M7.75 11a5 5 0 0 1 8.5 0"/><path d="m12 11.5 1.75-2.75"/></svg><span>{{ lang.t("Weight") }}</span></a></li>
     <li><a href="/goals"{% if nav == "goals" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="5"/><circle class="fill-on-current" cx="12" cy="12" r="1.5"/></svg><span>{{ lang.t("Goals") }}</span></a></li>
     <li><a href="/settings"{% if nav == "settings" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h8.5M17.5 7H20M4 12h2.5M11.5 12H20M4 17h10.5M19.5 17h.5"/><circle cx="15" cy="7" r="2.25"/><circle cx="9" cy="12" r="2.25"/><circle cx="17" cy="17" r="2.25"/></svg><span>{{ lang.t("Settings") }}</span></a></li>

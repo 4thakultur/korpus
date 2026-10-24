@@ -3,6 +3,8 @@
 (function () {
   "use strict";
   document.documentElement.classList.add("js");
+  // The sport icon sprite, with this script's version so they refresh together.
+  var SPORTS_SVG = "/static/sports.svg" + (document.currentScript ? new URL(document.currentScript.src).search : "");
 
   function onReady(fn) {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn);
@@ -390,14 +392,32 @@
     button.id = input.id + "-button";
     var describedBy = input.getAttribute("aria-describedby");
     if (describedBy) button.setAttribute("aria-describedby", describedBy);
+    // An optional date (data-clearable) gets a button that empties it.
+    var clear = null;
+    if (input.hasAttribute("data-clearable")) {
+      clear = document.createElement("button");
+      clear.type = "button";
+      clear.className = "date-clear";
+      clear.setAttribute("aria-label", t("clear", "Clear") + (name ? ": " + name : ""));
+      clear.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" ' +
+        'stroke-linecap="round" aria-hidden="true" focusable="false"><path d="m7 7 10 10M17 7 7 17"/></svg>';
+      clear.addEventListener("click", function () {
+        input.value = "";
+        show();
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        button.focus();
+      });
+    }
     function show() {
       var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.value);
       var d = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
       button.textContent = d ? shortFmt.format(d) : t("choose-date", "Choose a date");
       button.setAttribute("aria-label", (name ? name + ": " : "") + (d ? longFmt.format(d) : t("choose-date", "Choose a date")));
+      if (clear) clear.hidden = !d;
     }
     show();
     input.after(button);
+    if (clear) button.after(clear);
     // Clicking the row's label opens the calendar, as it would focus the field.
     if (label) label.htmlFor = button.id;
     var now = new Date();
@@ -460,13 +480,20 @@
     list.tabIndex = -1;
     list.setAttribute("role", "listbox");
     if (label) list.setAttribute("aria-labelledby", label.id);
+    // An option's data-icon names a symbol of the sport icon sprite.
+    function icon(o) {
+      var name = o && o.getAttribute("data-icon");
+      return name ? '<svg class="sport-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+        '<use href="' + SPORTS_SVG + '#' + encodeURIComponent(name) + '"/></svg>' : "";
+    }
     var options = Array.prototype.slice.call(select.options).filter(function (o) { return !o.disabled; });
     var items = options.map(function (o, i) {
       var li = document.createElement("li");
       li.id = menuId + "-" + i;
       li.setAttribute("role", "option");
       if (o.lang) li.lang = o.lang;
-      li.innerHTML = check + '<span class="menu-text"></span>';
+      li.innerHTML = check + icon(o) + '<span class="menu-text"></span>';
       li.querySelector(".menu-text").textContent = o.textContent;
       list.appendChild(li);
       return li;
@@ -479,7 +506,8 @@
     }
     function show() {
       var o = options[selectedIndex()];
-      value.textContent = o ? o.textContent : "";
+      value.innerHTML = icon(o) + "<span></span>";
+      value.lastChild.textContent = o ? o.textContent : "";
       if (o && o.lang) value.lang = o.lang; else value.removeAttribute("lang");
     }
     function setActive(i, scroll) {
@@ -918,6 +946,23 @@
         input.value = d;
         button.form.submit();
       });
+    });
+
+    // Fields that only apply to a repeating activity show while
+    // "Repeat every week" is on.
+    document.querySelectorAll("input[data-repeat-toggle]").forEach(function (toggle) {
+      var rows = toggle.form ? toggle.form.querySelectorAll("[data-repeat-only]") : [];
+      function sync() { rows.forEach(function (r) { r.hidden = !toggle.checked; }); }
+      toggle.addEventListener("change", sync);
+      sync();
+    });
+
+    // The name and intensity fields only apply to a custom sport.
+    document.querySelectorAll("select[data-sport-menu]").forEach(function (menu) {
+      var rows = menu.form ? menu.form.querySelectorAll("[data-custom-only]") : [];
+      function sync() { rows.forEach(function (r) { r.hidden = menu.value !== "custom"; }); }
+      menu.addEventListener("change", sync);
+      sync();
     });
 
     // Date fields in forms become a capsule showing the date, as in iOS.

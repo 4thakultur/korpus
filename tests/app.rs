@@ -706,6 +706,299 @@ async fn weight_log_and_units() {
 }
 
 #[tokio::test]
+async fn steps_fill_the_ring_and_raise_the_days_target() {
+    let a = app().await;
+    a.setup().await;
+    a.post("/goals", "target_mode=custom&custom_target=2000")
+        .await;
+
+    let page = a.get("/activity?date=2026-10-24").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("<strong>0</strong> of 10,000 steps"));
+    assert!(
+        page.body
+            .contains("Record your steps at the end of the day.")
+    );
+    assert!(page.body.contains("href=\"/activity\""), "Activity tab");
+
+    let r = a
+        .post("/activity/steps", "date=2026-10-24&steps=8+000")
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/activity?date=2026-10-24&msg=steps_saved")
+    );
+    let page = a.get("/activity?date=2026-10-24").await;
+    assert!(page.body.contains("<strong>8,000</strong> of 10,000 steps"));
+    assert!(
+        page.body.contains("stroke-dasharray=\"80 100\""),
+        "ring at 80%"
+    );
+    assert!(
+        page.body.contains("Add your height and weight"),
+        "no estimate without height and weight"
+    );
+    assert_eq!(a.day_kcal("2026-10-24").await, "0");
+    assert!(
+        !a.get("/diary?date=2026-10-24")
+            .await
+            .body
+            .contains("kcal from")
+    );
+
+    let r = a
+        .post(
+            "/goals",
+            "target_mode=custom&custom_target=2000&height=175&weight=75",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    // 8,000 steps at 175 cm and 75 kg: about 217 kcal.
+    let page = a.get("/activity?date=2026-10-24").await;
+    assert!(page.body.contains("+217 kcal"), "{}", page.body);
+    let diary = a.get("/diary?date=2026-10-24").await.body;
+    assert!(diary.contains("of 2217 kcal"), "{diary}");
+    assert!(diary.contains("+217 kcal from 8,000 steps"));
+    // Other days keep the plain target.
+    assert!(
+        a.get("/diary?date=2026-10-23")
+            .await
+            .body
+            .contains("of 2000 kcal")
+    );
+
+    // The step goal comes from Settings.
+    let r = a.post("/settings/steps", "step_goal=16000").await;
+    assert_eq!(r.location.as_deref(), Some("/settings?msg=step_goal_saved"));
+    assert!(
+        a.get("/activity?date=2026-10-24")
+            .await
+            .body
+            .contains("stroke-dasharray=\"50 100\"")
+    );
+    for bad in ["step_goal=500", "step_goal=lots", "step_goal="] {
+        let r = a.post("/settings/steps", bad).await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+    }
+
+    for bad in ["steps=", "steps=-4", "steps=8,5", "steps=200000"] {
+        let r = a
+            .post("/activity/steps", &format!("date=2026-10-24&{bad}"))
+            .await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+        assert!(r.body.contains("aria-invalid=\"true\""), "{bad}");
+    }
+    assert_eq!(
+        a.post("/activity/steps", "date=soon&steps=10").await.status,
+        StatusCode::BAD_REQUEST
+    );
+
+    let r = a.post("/activity/steps/clear", "date=2026-10-24").await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/activity?date=2026-10-24&msg=steps_deleted")
+    );
+    assert!(
+        a.get("/diary?date=2026-10-24")
+            .await
+            .body
+            .contains("of 2000 kcal")
+    );
+}
+
+#[tokio::test]
+async fn sport_from_the_list_or_custom_raises_the_days_target() {
+    let a = app().await;
+    a.setup().await;
+    a.post(
+        "/activity",
+        "sport_key=running&duration=30&start=2026-10-24",
+    )
+    .await;
+    let page = a.get("/activity?date=2026-10-24").await.body;
+    assert!(page.contains(r#"row-title">Running<"#));
+    assert!(page.contains("Add your weight to estimate the calories."));
+
+    a.post(
+        "/goals",
+        "target_mode=custom&custom_target=2000&height=175&weight=75",
+    )
+    .await;
+    let r = a
+        .post(
+            "/activity",
+            "sport_key=custom&sport=Parkour&intensity=moderate&duration=40&start=2026-10-24",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    // Running (9 METs) 30 min and a moderate custom sport (4.5 METs)
+    // 40 min at 75 kg: 300 + 175 kcal above rest.
+    let page = a.get("/activity?date=2026-10-24").await.body;
+    assert!(
+        page.contains("300 kcal") && page.contains("175 kcal"),
+        "{page}"
+    );
+    assert!(page.contains("+475 kcal"));
+    let diary = a.get("/diary?date=2026-10-24").await.body;
+    assert!(diary.contains("of 2475 kcal"), "{diary}");
+    assert!(diary.contains("+475 kcal from 1 h 10 min of sport"));
+
+    let r = a
+        .post(
+            "/activity",
+            "sport_key=custom&sport=Parkour&duration=40&start=2026-10-24",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(r.body.contains("Choose how intense it is."));
+
+    // In French, a listed sport shows its French name.
+    a.post("/settings", "unit_system=metric&timezone=UTC&language=fr")
+        .await;
+    let fr = a.get("/activity?date=2026-10-24").await.body;
+    assert!(fr.contains(r#"row-title">Course à pied<"#), "{fr}");
+}
+
+#[tokio::test]
+async fn sport_once_or_every_week_with_skipped_days() {
+    let a = app().await;
+    a.setup().await;
+
+    // Saturday 24 October 2026, once.
+    let r = a
+        .post(
+            "/activity",
+            "sport_key=climbing&duration=90&start=2026-10-24&note=Bouldering+gym&day5=on",
+        )
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/activity?date=2026-10-24&msg=activity_added")
+    );
+    // Every Monday and Thursday from Monday 26 October.
+    let r = a
+        .post(
+            "/activity",
+            "sport_key=swimming&duration=45&start=2026-10-26&repeat=on&day0=on&day3=on",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+
+    let sat = a.get("/activity?date=2026-10-24").await;
+    assert!(sat.body.contains(r#"row-title">Climbing<"#) && sat.body.contains("1 h 30 min"));
+    assert!(!sat.body.contains(r#"row-title">Swimming<"#));
+    let thu = a.get("/activity?date=2026-11-05").await;
+    assert!(
+        thu.body.contains(r#"row-title">Swimming<"#) && thu.body.contains("Every week: Mon, Thu")
+    );
+    assert!(!thu.body.contains(r#"row-title">Climbing<"#));
+    assert!(
+        !a.get("/activity?date=2026-11-04")
+            .await
+            .body
+            .contains(r#"row-title">Swimming<"#)
+    );
+
+    let swim: i64 = sqlx::query_scalar("SELECT id FROM activities WHERE sport = 'Swimming'")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    let edit = a
+        .get(&format!("/activity/{swim}/edit?date=2026-11-05"))
+        .await;
+    assert_eq!(edit.status, StatusCode::OK);
+    assert!(edit.body.contains("Skip on 5 Nov 2026 only"));
+
+    let r = a
+        .post(&format!("/activity/{swim}/skip"), "date=2026-11-05")
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/activity?date=2026-11-05&msg=activity_skipped")
+    );
+    assert!(
+        !a.get("/activity?date=2026-11-05")
+            .await
+            .body
+            .contains(r#"row-title">Swimming<"#)
+    );
+    assert!(
+        a.get("/activity?date=2026-11-09")
+            .await
+            .body
+            .contains(r#"row-title">Swimming<"#)
+    );
+    // Only a day the activity repeats on can be skipped.
+    assert_eq!(
+        a.post(&format!("/activity/{swim}/skip"), "date=2026-11-04")
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+
+    // Ending the series keeps earlier days.
+    let r = a
+        .post(
+            &format!("/activity/{swim}"),
+            "sport_key=swimming&duration=60&start=2026-10-26&repeat=on&day0=on&day3=on&end=2026-11-30&from=2026-11-09",
+        )
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/activity?date=2026-11-09&msg=activity_saved")
+    );
+    assert!(
+        a.get("/activity?date=2026-11-30")
+            .await
+            .body
+            .contains(r#"row-title">Swimming<"#)
+    );
+    assert!(
+        !a.get("/activity?date=2026-12-03")
+            .await
+            .body
+            .contains(r#"row-title">Swimming<"#)
+    );
+    assert!(
+        a.get("/activity?date=2026-10-26")
+            .await
+            .body
+            .contains("1 h")
+    );
+
+    for bad in [
+        "sport_key=&duration=30&start=2026-10-24",
+        "sport_key=running&duration=0&start=2026-10-24",
+        "sport_key=running&duration=half+an+hour&start=2026-10-24",
+        "sport_key=running&duration=30&start=later",
+        "sport_key=running&duration=30&start=2026-10-24&repeat=on",
+        "sport_key=running&duration=30&start=2026-10-24&repeat=on&day1=on&end=2026-10-01",
+    ] {
+        let r = a.post("/activity", bad).await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{bad}");
+        assert!(r.body.contains("error-summary"), "{bad}");
+    }
+
+    let r = a
+        .post(&format!("/activity/{swim}/delete"), "date=2026-11-09")
+        .await;
+    assert_eq!(
+        r.location.as_deref(),
+        Some("/activity?date=2026-11-09&msg=activity_deleted")
+    );
+    assert!(
+        !a.get("/activity?date=2026-10-26")
+            .await
+            .body
+            .contains(r#"row-title">Swimming<"#)
+    );
+    assert_eq!(
+        a.get(&format!("/activity/{swim}/edit")).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
 async fn goals_estimate_custom_and_safety() {
     let a = app().await;
     a.setup().await;
@@ -758,6 +1051,70 @@ async fn goals_estimate_custom_and_safety() {
     let g = korpus::goals::load(&a.db).await.unwrap();
     assert_eq!(g.daily_kcal_target, None);
     assert_eq!(g.protein_goal_g, Some(120.0));
+}
+
+#[tokio::test]
+async fn macro_goals_are_estimated_and_follow_the_days_activity() {
+    let a = app().await;
+    a.setup().await;
+
+    let r = a
+        .post(
+            "/goals",
+            "target_mode=custom&custom_target=2000&height=175&weight=75&goal=lose&macro_mode=estimate",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER, "{}", r.body);
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.macro_source.as_deref(), Some("estimate"));
+    // 1.6 g/kg × 75 kg; 30 % of 2000 kcal as fat; carbohydrate the rest.
+    assert!((g.protein_goal_g.unwrap() - 120.0).abs() < 1e-9);
+    assert!((g.fat_goal_g.unwrap() - 600.0 / 9.0).abs() < 1e-9);
+    assert!((g.carbs_goal_g.unwrap() - 230.0).abs() < 1e-9);
+    let page = a.get("/goals").await.body;
+    assert!(page.contains("1.6 g per kg of body weight"), "{page}");
+
+    // 8,000 steps (about 217 kcal) add about 54 g of carbohydrate that day.
+    a.post("/activity/steps", "date=2026-10-24&steps=8000")
+        .await;
+    let diary = a.get("/diary?date=2026-10-24").await.body;
+    assert!(diary.contains(" / 284 g"), "{diary}");
+    assert!(diary.contains(" / 120 g"));
+    let other = a.get("/diary?date=2026-10-23").await.body;
+    assert!(other.contains(" / 230 g"), "{other}");
+
+    // Own goals are not adjusted for activity.
+    a.post(
+        "/goals",
+        "target_mode=custom&custom_target=2000&height=175&weight=75&macro_mode=custom&carbs_goal=200",
+    )
+    .await;
+    let diary = a.get("/diary?date=2026-10-24").await.body;
+    assert!(diary.contains(" / 200 g"), "{diary}");
+
+    let no_weight = a
+        .post(
+            "/goals",
+            "target_mode=custom&custom_target=2000&macro_mode=estimate",
+        )
+        .await;
+    assert_eq!(no_weight.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(no_weight.body.contains("enter your weight"));
+
+    let no_target = a
+        .post("/goals", "target_mode=none&weight=75&macro_mode=estimate")
+        .await;
+    assert_eq!(no_target.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(no_target.body.contains("set a daily calorie target"));
+
+    let minor = a
+        .post(
+            "/goals",
+            "target_mode=custom&custom_target=2000&weight=50&birth_date=2015-01-01&macro_mode=estimate",
+        )
+        .await;
+    assert_eq!(minor.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(minor.body.contains("under 18"));
 }
 
 #[tokio::test]
@@ -885,6 +1242,21 @@ async fn export_import_round_trip_and_backup() {
     a.post("/weight", "date=2026-05-01&weight=72").await;
     a.post("/goals", "target_mode=custom&custom_target=2100")
         .await;
+    a.post("/activity/steps", "date=2026-05-01&steps=9000")
+        .await;
+    let r = a.post("/settings/steps", "step_goal=12000").await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    a.post(
+        "/activity",
+        "sport_key=cycling&duration=40&start=2026-05-01&repeat=on&day4=on",
+    )
+    .await;
+    let ride: i64 = sqlx::query_scalar("SELECT id FROM activities")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    a.post(&format!("/activity/{ride}/skip"), "date=2026-05-08")
+        .await;
 
     let export = a.get("/settings/export.json").await;
     assert_eq!(export.status, StatusCode::OK);
@@ -901,7 +1273,17 @@ async fn export_import_round_trip_and_backup() {
     assert_eq!(summary.foods, 1);
     assert_eq!(summary.diary_entries, 1);
     assert_eq!(summary.weight_entries, 1);
+    assert_eq!(summary.activities, 1);
     assert_eq!(b.day_kcal("2026-05-01").await, "296");
+    let day = b.get("/activity?date=2026-05-01").await.body;
+    assert!(day.contains("<strong>9,000</strong>") && day.contains(r#"row-title">Cycling<"#));
+    assert!(
+        !b.get("/activity?date=2026-05-08")
+            .await
+            .body
+            .contains(r#"row-title">Cycling<"#)
+    );
+    assert!(day.contains("of 12,000 steps"));
     assert_eq!(
         korpus::goals::load(&b.db).await.unwrap().daily_kcal_target,
         Some(2100.0)
@@ -982,6 +1364,15 @@ async fn invalid_import_is_rejected_atomically() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("goal settings"), "{err}");
+    let mut export = korpus::backup::export(&a.db).await.unwrap();
+    export.daily_steps.push(korpus::activity::DailySteps {
+        step_date: "2026-05-01".into(),
+        steps: -10,
+    });
+    let err = korpus::backup::import(&b.db, &export, Lang::En)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("steps for 2026-05-01"), "{err}");
     let mut export = korpus::backup::export(&a.db).await.unwrap();
     export.foods[0].notes = Some("x".repeat(10_000));
     assert!(

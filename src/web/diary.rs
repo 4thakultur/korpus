@@ -20,7 +20,7 @@ use crate::nutrition::{
     Nutrient, fmt_amount, fmt_g, fmt_g_whole, fmt_kcal, fmt_opt_g, fmt_opt_kcal,
 };
 use crate::units::{fmt_date_long, fmt_date_short, parse_date, parse_decimal, today_in};
-use crate::{foods, goals, profile};
+use crate::{activity, foods, goals, profile};
 
 pub async fn root(State(state): State<AppState>) -> AppResult<Response> {
     let p = profile::load(&state.db).await?;
@@ -77,6 +77,8 @@ pub struct DayPage {
     pub lang: Lang,
     pub title: String,
     pub nav: &'static str,
+    pub day_path: &'static str,
+    pub date_field_label: &'static str,
     pub date_iso: String,
     pub date_label: String,
     pub prev_iso: String,
@@ -85,6 +87,9 @@ pub struct DayPage {
     pub is_today: bool,
     pub consumed: String,
     pub target: Option<String>,
+    /// "+272 kcal from 10,000 steps", "+280 kcal from 30 min of sport":
+    /// what activity adds to the target.
+    pub activity_bonus: Vec<String>,
     pub remaining: Option<String>,
     pub over: Option<String>,
     pub pct: u32,
@@ -138,7 +143,19 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
     let g = goals::load(&state.db).await?;
     let t = summary.totals;
 
-    let target = g.daily_kcal_target;
+    // Walking and sport add their estimated energy to the day's target.
+    let steps = activity::step_energy_on(&state.db, date).await?;
+    let sport = activity::sport_energy_on(&state.db, date).await?;
+    let activity_kcal = steps.map_or(0.0, |s| s.kcal) + sport.map_or(0.0, |s| s.kcal);
+    let target = g.daily_kcal_target.map(|t| t + activity_kcal);
+    // Estimated macro goals are for a day without activity; the day's
+    // activity energy goes to carbohydrate. Own goals are kept as entered.
+    let carbs_goal = if g.macros_estimated() {
+        g.carbs_goal_g
+            .map(|c| c + goals::activity_carbs_g(activity_kcal))
+    } else {
+        g.carbs_goal_g
+    };
     let (remaining, over) = match target {
         Some(target) if t.energy_kcal <= target => (Some(fmt_kcal(target - t.energy_kcal)), None),
         Some(target) => (None, Some(fmt_kcal(t.energy_kcal - target))),
@@ -154,7 +171,7 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
     };
     let macros = vec![
         macro_view(Nutrient::Protein, t.protein_g, g.protein_goal_g),
-        macro_view(Nutrient::Carbs, t.carbs_g, g.carbs_goal_g),
+        macro_view(Nutrient::Carbs, t.carbs_g, carbs_goal),
         macro_view(Nutrient::Fat, t.fat_g, g.fat_goal_g),
     ];
 
@@ -183,6 +200,8 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
         lang,
         title: day_title(date, today, lang),
         nav: "diary",
+        day_path: "/diary",
+        date_field_label: lang.t("Diary date"),
         date_iso: date.to_string(),
         date_label: fmt_date_long(date, lang),
         prev_iso: shift(date, -1).to_string(),
@@ -191,6 +210,25 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
         is_today: date == today,
         consumed: fmt_kcal(t.energy_kcal),
         target: target.map(fmt_kcal),
+        activity_bonus: if g.daily_kcal_target.is_some() {
+            let steps = steps.map(|s| {
+                lang.f2(
+                    "+{0} kcal from {1} steps",
+                    fmt_kcal(s.kcal),
+                    super::activity::fmt_count(s.steps, lang),
+                )
+            });
+            let sport = sport.map(|s| {
+                lang.f2(
+                    "+{0} kcal from {1} of sport",
+                    fmt_kcal(s.kcal),
+                    super::activity::fmt_duration(s.minutes),
+                )
+            });
+            steps.into_iter().chain(sport).collect()
+        } else {
+            Vec::new()
+        },
         remaining,
         over,
         pct: target.map(|g| pct(t.energy_kcal, g)).unwrap_or(0),
@@ -208,7 +246,7 @@ pub async fn day(State(state): State<AppState>, Query(q): Query<DayQuery>) -> Ap
 }
 
 /// "Today", "Yesterday" or "Tomorrow" near the current day, else the short date.
-fn day_title(date: Date, today: Date, lang: Lang) -> String {
+pub(super) fn day_title(date: Date, today: Date, lang: Lang) -> String {
     if date == today {
         lang.t("Today").into()
     } else if date == shift(today, -1) {
@@ -220,7 +258,7 @@ fn day_title(date: Date, today: Date, lang: Lang) -> String {
     }
 }
 
-fn shift(d: Date, days: i32) -> Date {
+pub(super) fn shift(d: Date, days: i32) -> Date {
     d.checked_add(days.days()).unwrap_or(d)
 }
 

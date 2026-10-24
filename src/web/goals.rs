@@ -15,10 +15,11 @@ use crate::error::AppResult;
 use crate::forms::{FieldErrors, InputField};
 use crate::goals::{
     self, Activity, CALCULATION_VERSION, CustomTargetCheck, Estimate, EstimateInput, Goal,
-    GoalSettings, Sex, age_on, check_custom_target, estimate,
+    GoalSettings, MacroEstimate, MacroInput, Sex, age_on, check_custom_target, estimate,
+    estimate_macros,
 };
 use crate::i18n::Lang;
-use crate::nutrition::{Nutrient, fmt_kcal};
+use crate::nutrition::{Nutrient, fmt_g_whole, fmt_kcal};
 use crate::units::{UnitSystem, parse_date, parse_decimal, today_in};
 use crate::{profile, weight};
 
@@ -34,6 +35,7 @@ pub struct GoalsForm {
     pub goal: String,
     pub special: String,
     pub custom_target: String,
+    pub macro_mode: String,
     pub protein_goal: String,
     pub carbs_goal: String,
     pub fat_goal: String,
@@ -45,6 +47,19 @@ pub struct EstimateView {
     pub target: String,
     pub applied_goal: &'static str,
     pub notes: Vec<&'static str>,
+}
+
+/// The macronutrient goals that the estimate would give.
+pub struct MacroPlanView {
+    pub protein_label: &'static str,
+    pub carbs_label: &'static str,
+    pub fat_label: &'static str,
+    pub protein: String,
+    pub carbs: String,
+    pub fat: String,
+    /// "1.6 g per kg of body weight"
+    pub protein_basis: String,
+    pub protein_limited: bool,
 }
 
 pub struct Choice {
@@ -64,6 +79,7 @@ pub struct GoalsPage {
     pub current_target: Option<String>,
     pub current_source: &'static str,
     pub estimate: Option<EstimateView>,
+    pub macro_plan: Option<MacroPlanView>,
     pub minor: bool,
     pub caution: Option<&'static str>,
     pub weight_unit: &'static str,
@@ -121,6 +137,7 @@ fn form_from_settings(g: &GoalSettings, units: UnitSystem, latest_kg: Option<f64
         } else {
             String::new()
         },
+        macro_mode: g.macro_source.clone().unwrap_or_else(|| "custom".into()),
         protein_goal: fmt_input(g.protein_goal_g, 0),
         carbs_goal: fmt_input(g.carbs_goal_g, 0),
         fat_goal: fmt_input(g.fat_goal_g, 0),
@@ -251,6 +268,80 @@ fn macro_goal(raw: &str, field: &'static str, errors: &mut FieldErrors, lang: La
     }
 }
 
+/// The goal the estimates apply: a loss goal becomes maintenance when the
+/// user indicated special circumstances, as in [`goals::estimate`].
+fn applied_goal(p: &Parsed) -> Goal {
+    if p.special && p.goal.is_loss() {
+        Goal::Maintain
+    } else {
+        p.goal
+    }
+}
+
+fn is_minor(p: &Parsed, today: jiff::civil::Date) -> bool {
+    p.birth_date.is_some_and(|d| age_on(d, today) < 18)
+}
+
+/// The calorie target the form would save, if it is valid.
+fn planned_target(form: &GoalsForm, est: Option<&Estimate>, lang: Lang) -> Option<f64> {
+    match form.target_mode.as_str() {
+        "estimate" => match est? {
+            Estimate::Calculated { target_kcal, .. } => Some(*target_kcal),
+            Estimate::NotForMinors => None,
+        },
+        "custom" => parse_decimal(&form.custom_target)
+            .ok()
+            .flatten()
+            .filter(|v| check_custom_target(*v, lang).is_ok()),
+        _ => None,
+    }
+}
+
+/// Macro goals from the target, `None` when the target or weight is missing
+/// or the user is under 18.
+fn macro_estimate_for(
+    p: &Parsed,
+    target_kcal: Option<f64>,
+    today: jiff::civil::Date,
+) -> Option<MacroEstimate> {
+    if is_minor(p, today) {
+        return None;
+    }
+    Some(estimate_macros(&MacroInput {
+        target_kcal: target_kcal?,
+        weight_kg: p.weight_kg?,
+        goal: applied_goal(p),
+        activity: p.activity,
+    }))
+}
+
+fn macro_plan_view(m: &MacroEstimate, units: UnitSystem, lang: Lang) -> MacroPlanView {
+    // Per lb for imperial units, so the rate matches the weight shown.
+    let protein_basis = match units {
+        UnitSystem::Metric => lang.f1(
+            "{0} g per kg of body weight",
+            lang.num(format!("{:.1}", m.protein_g_per_kg)),
+        ),
+        UnitSystem::Imperial => lang.f1(
+            "{0} g per lb of body weight",
+            lang.num(format!(
+                "{:.2}",
+                m.protein_g_per_kg / units.weight_from_kg(1.0)
+            )),
+        ),
+    };
+    MacroPlanView {
+        protein_label: Nutrient::Protein.label(lang),
+        carbs_label: Nutrient::Carbs.label(lang),
+        fat_label: Nutrient::Fat.label(lang),
+        protein: fmt_g_whole(m.protein_g),
+        carbs: fmt_g_whole(m.carbs_g),
+        fat: fmt_g_whole(m.fat_g),
+        protein_basis,
+        protein_limited: m.protein_limited,
+    }
+}
+
 fn current_source(g: &GoalSettings, lang: Lang) -> &'static str {
     match g.target_source.as_deref() {
         Some("estimate") => lang.t("estimated"),
@@ -311,6 +402,7 @@ pub async fn page(
     let mut scratch = FieldErrors::default();
     let parsed = parse_inputs(&form, units, &mut scratch, today, lang);
     let est = estimate_for(&parsed, today);
+    let macros = macro_estimate_for(&parsed, planned_target(&form, est.as_ref(), lang), today);
     let (activities, goal_choices) = choices(lang);
     let page = GoalsPage {
         lang,
@@ -321,6 +413,7 @@ pub async fn page(
         current_target: g.daily_kcal_target.map(fmt_kcal),
         current_source: current_source(&g, lang),
         estimate: est.as_ref().and_then(|e| estimate_view(e, lang)),
+        macro_plan: macros.map(|m| macro_plan_view(&m, units, lang)),
         minor: matches!(est, Some(Estimate::NotForMinors)),
         caution: None,
         weight_unit: units.weight_unit(),
@@ -343,9 +436,6 @@ pub async fn save(
     let today = today_in(&p.timezone);
     let mut errors = FieldErrors::default();
     let parsed = parse_inputs(&form, units, &mut errors, today, lang);
-    let protein = macro_goal(&form.protein_goal, "protein_goal", &mut errors, lang);
-    let carbs = macro_goal(&form.carbs_goal, "carbs_goal", &mut errors, lang);
-    let fat = macro_goal(&form.fat_goal, "fat_goal", &mut errors, lang);
     let est = estimate_for(&parsed, today);
 
     let mut caution = None;
@@ -406,6 +496,50 @@ pub async fn save(
         }
     };
 
+    let macro_est = macro_estimate_for(&parsed, target, today);
+    let (protein, carbs, fat, macro_source) = match form.macro_mode.as_str() {
+        "estimate" => match macro_est {
+            Some(m) => (
+                Some(m.protein_g),
+                Some(m.carbs_g),
+                Some(m.fat_g),
+                Some("estimate"),
+            ),
+            None => {
+                if is_minor(&parsed, today) {
+                    errors.add(
+                        "macro_mode",
+                        lang.t("Korpus does not estimate macronutrient goals for people under 18. Please ask a doctor or registered dietitian, or enter your own."),
+                    );
+                } else if target.is_none() {
+                    // A target error is already reported; don't repeat it.
+                    if !errors.has("target_mode") && !errors.has("custom_target") {
+                        errors.add(
+                            "macro_mode",
+                            lang.t("To estimate macronutrient goals, set a daily calorie target."),
+                        );
+                    }
+                } else if !errors.has("weight") {
+                    errors.add(
+                        "macro_mode",
+                        lang.t("To estimate macronutrient goals, enter your weight."),
+                    );
+                }
+                (None, None, None, None)
+            }
+        },
+        "custom" | "" => (
+            macro_goal(&form.protein_goal, "protein_goal", &mut errors, lang),
+            macro_goal(&form.carbs_goal, "carbs_goal", &mut errors, lang),
+            macro_goal(&form.fat_goal, "fat_goal", &mut errors, lang),
+            Some("custom"),
+        ),
+        _ => {
+            errors.add("macro_mode", lang.t("Choose how to set your target."));
+            (None, None, None, None)
+        }
+    };
+
     if errors.is_empty() {
         let settings = GoalSettings {
             daily_kcal_target: target,
@@ -422,6 +556,7 @@ pub async fn save(
             protein_goal_g: protein,
             carbs_goal_g: carbs,
             fat_goal_g: fat,
+            macro_source: macro_source.map(str::to_string),
             updated_at: String::new(),
         };
         goals::save(&state.db, &settings).await?;
@@ -446,6 +581,7 @@ pub async fn save(
         current_target: g.daily_kcal_target.map(fmt_kcal),
         current_source: current_source(&g, lang),
         estimate: est.as_ref().and_then(|e| estimate_view(e, lang)),
+        macro_plan: macro_est.map(|m| macro_plan_view(&m, units, lang)),
         minor: matches!(est, Some(Estimate::NotForMinors)),
         caution,
         weight_unit: units.weight_unit(),

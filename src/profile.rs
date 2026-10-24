@@ -1,5 +1,5 @@
-//! The single local profile: setup state, units, time zone, language and
-//! country.
+//! The single local profile: setup state, units, time zone, language,
+//! country and daily step goal.
 
 use sqlx::SqlitePool;
 
@@ -20,6 +20,14 @@ pub struct Profile {
     /// Absent in exports made before countries existed.
     #[serde(default)]
     pub country: Option<String>,
+    /// Steps that fill the steps ring. Absent in exports made before step
+    /// goals existed.
+    #[serde(default = "default_step_goal")]
+    pub step_goal: i64,
+}
+
+fn default_step_goal() -> i64 {
+    crate::activity::DEFAULT_STEP_GOAL
 }
 
 impl Profile {
@@ -38,7 +46,8 @@ impl Profile {
 
 pub async fn load(db: &SqlitePool) -> AppResult<Profile> {
     Ok(sqlx::query_as::<_, Profile>(
-        "SELECT setup_complete, unit_system, timezone, language, country FROM profile WHERE id = 1",
+        "SELECT setup_complete, unit_system, timezone, language, country, step_goal
+         FROM profile WHERE id = 1",
     )
     .fetch_one(db)
     .await?)

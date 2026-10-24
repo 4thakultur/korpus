@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
+use crate::activity::{self, ActivitySkip, DailySteps, Weekdays};
 use crate::db::now_utc;
 use crate::diary::{Entry, Meal, check_amount};
 use crate::error::{AppError, AppResult};
@@ -29,6 +30,13 @@ pub struct Export {
     pub foods: Vec<Food>,
     pub diary_entries: Vec<Entry>,
     pub weight_entries: Vec<WeightEntry>,
+    /// Activity data; absent in exports made before activity existed.
+    #[serde(default)]
+    pub daily_steps: Vec<DailySteps>,
+    #[serde(default)]
+    pub activities: Vec<activity::Activity>,
+    #[serde(default)]
+    pub activity_skips: Vec<ActivitySkip>,
 }
 
 pub async fn export(db: &SqlitePool) -> AppResult<Export> {
@@ -45,6 +53,23 @@ pub async fn export(db: &SqlitePool) -> AppResult<Export> {
     )
     .fetch_all(db)
     .await?;
+    let daily_steps = sqlx::query_as::<_, DailySteps>(
+        "SELECT step_date, steps FROM daily_steps ORDER BY step_date",
+    )
+    .fetch_all(db)
+    .await?;
+    let activities = sqlx::query_as::<_, activity::Activity>(
+        "SELECT id, sport, sport_key, intensity, duration_min, note, start_date, weekdays,
+             end_date
+         FROM activities ORDER BY id",
+    )
+    .fetch_all(db)
+    .await?;
+    let activity_skips = sqlx::query_as::<_, ActivitySkip>(
+        "SELECT activity_id, skip_date FROM activity_skips ORDER BY activity_id, skip_date",
+    )
+    .fetch_all(db)
+    .await?;
     Ok(Export {
         format: EXPORT_FORMAT.into(),
         version: EXPORT_VERSION,
@@ -54,6 +79,9 @@ pub async fn export(db: &SqlitePool) -> AppResult<Export> {
         foods,
         diary_entries,
         weight_entries,
+        daily_steps,
+        activities,
+        activity_skips,
     })
 }
 
@@ -194,6 +222,7 @@ pub struct ImportSummary {
     pub foods: usize,
     pub diary_entries: usize,
     pub weight_entries: usize,
+    pub activities: usize,
 }
 
 fn invalid(lang: Lang, what: impl std::fmt::Display) -> AppError {
@@ -247,6 +276,9 @@ fn valid_goals(g: &GoalSettings) -> bool {
             .into_iter()
             .all(|v| in_range(v, 0.0, 1000.0))
         && known(g.target_source.as_deref(), |s| {
+            matches!(s, "estimate" | "custom")
+        })
+        && known(g.macro_source.as_deref(), |s| {
             matches!(s, "estimate" | "custom")
         })
         && Goal::parse(&g.goal).is_some()
@@ -335,6 +367,51 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
             return Err(invalid(lang, at(ctx(), lang.t("text too long"))));
         }
     }
+    if !(activity::MIN_STEP_GOAL..=activity::MAX_STEPS).contains(&export.profile.step_goal) {
+        return Err(invalid(lang, lang.t("step goal")));
+    }
+    for s in &export.daily_steps {
+        let ctx = || lang.f("steps for {0}", &[&s.step_date]);
+        parse_date(&s.step_date).ok_or_else(|| invalid(lang, at(ctx(), lang.t("date"))))?;
+        if !(0..=activity::MAX_STEPS).contains(&s.steps) {
+            return Err(invalid(lang, at(ctx(), lang.t("steps"))));
+        }
+    }
+    for a in &export.activities {
+        let ctx = || lang.f("activity {0}", &[&a.id]);
+        if a.sport.trim().is_empty() || too_long(Some(&a.sport), activity::MAX_SPORT_CHARS) {
+            return Err(invalid(lang, at(ctx(), lang.t("name"))));
+        }
+        if a.sport_key.is_some() && a.listed_sport().is_none() {
+            return Err(invalid(lang, at(ctx(), lang.t("sport"))));
+        }
+        if a.intensity.is_some() && (a.intensity().is_none() || a.sport_key.is_some()) {
+            return Err(invalid(lang, at(ctx(), lang.t("intensity"))));
+        }
+        if too_long(a.note.as_deref(), activity::MAX_NOTE_CHARS) {
+            return Err(invalid(lang, at(ctx(), lang.t("text too long"))));
+        }
+        if !(1..=activity::MAX_DURATION_MIN).contains(&a.duration_min) {
+            return Err(invalid(lang, at(ctx(), lang.t("duration"))));
+        }
+        let start =
+            parse_date(&a.start_date).ok_or_else(|| invalid(lang, at(ctx(), lang.t("date"))))?;
+        let repeat = Weekdays::from_bits(a.weekdays)
+            .ok_or_else(|| invalid(lang, at(ctx(), lang.t("days of the week"))))?;
+        if let Some(end) = &a.end_date {
+            let end_ok = parse_date(end).is_some_and(|end| end >= start) && !repeat.is_empty();
+            if !end_ok {
+                return Err(invalid(lang, at(ctx(), lang.t("date"))));
+            }
+        }
+    }
+    for s in &export.activity_skips {
+        let ctx = || lang.f("activity {0}", &[&s.activity_id]);
+        if !export.activities.iter().any(|a| a.id == s.activity_id) {
+            return Err(invalid(lang, at(ctx(), lang.t("unknown activity"))));
+        }
+        parse_date(&s.skip_date).ok_or_else(|| invalid(lang, at(ctx(), lang.t("date"))))?;
+    }
     if !valid_goals(&export.goals) {
         return Err(invalid(lang, lang.t("goal settings")));
     }
@@ -350,13 +427,14 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     let mut tx = db.begin().await?;
     let existing: i64 = sqlx::query_scalar(
         "SELECT (SELECT COUNT(*) FROM foods) + (SELECT COUNT(*) FROM diary_entries)
-              + (SELECT COUNT(*) FROM weight_entries)",
+              + (SELECT COUNT(*) FROM weight_entries) + (SELECT COUNT(*) FROM activities)
+              + (SELECT COUNT(*) FROM daily_steps)",
     )
     .fetch_one(&mut *tx)
     .await?;
     if existing > 0 {
         return Err(AppError::BadRequest(
-            lang.t("Import is only possible into an empty installation. This one already contains foods, diary entries or weights.")
+            lang.t("Import is only possible into an empty installation. This one already contains foods, diary entries, weights or activity.")
                 .into(),
         ));
     }
@@ -364,12 +442,14 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     let p = &export.profile;
     sqlx::query(
         "UPDATE profile SET setup_complete = 1, unit_system = ?, timezone = ?, language = ?,
-             country = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = 1",
+             country = ?, step_goal = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+         WHERE id = 1",
     )
     .bind(&p.unit_system)
     .bind(&p.timezone)
     .bind(p.lang().map(Lang::code))
     .bind(p.country())
+    .bind(p.step_goal)
     .execute(&mut *tx)
     .await?;
 
@@ -378,7 +458,7 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
         "UPDATE goal_settings SET daily_kcal_target = ?, target_source = ?, goal = ?, sex = ?,
              birth_date = ?, height_cm = ?, weight_kg = ?, activity = ?, special_circumstances = ?,
              maintenance_kcal = ?, calculation_version = ?, protein_goal_g = ?, carbs_goal_g = ?,
-             fat_goal_g = ?, updated_at = ? WHERE id = 1",
+             fat_goal_g = ?, macro_source = ?, updated_at = ? WHERE id = 1",
     )
     .bind(g.daily_kcal_target)
     .bind(&g.target_source)
@@ -394,6 +474,7 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     .bind(g.protein_goal_g)
     .bind(g.carbs_goal_g)
     .bind(g.fat_goal_g)
+    .bind(&g.macro_source)
     .bind(&g.updated_at)
     .execute(&mut *tx)
     .await?;
@@ -505,11 +586,63 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
             })?;
     }
 
+    for s in &export.daily_steps {
+        sqlx::query("INSERT INTO daily_steps (step_date, steps) VALUES (?, ?)")
+            .bind(&s.step_date)
+            .bind(s.steps)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| {
+                invalid(
+                    lang,
+                    lang.f(
+                        "steps for {0} could not be stored ({1})",
+                        &[&s.step_date, &e],
+                    ),
+                )
+            })?;
+    }
+
+    // Ids are preserved so that skipped days keep pointing at their activity.
+    for a in &export.activities {
+        sqlx::query(
+            "INSERT INTO activities
+                 (id, sport, sport_key, intensity, duration_min, note, start_date, weekdays,
+                  end_date)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(a.id)
+        .bind(&a.sport)
+        .bind(&a.sport_key)
+        .bind(&a.intensity)
+        .bind(a.duration_min)
+        .bind(&a.note)
+        .bind(&a.start_date)
+        .bind(a.weekdays)
+        .bind(&a.end_date)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| {
+            invalid(
+                lang,
+                lang.f("activity {0} could not be stored ({1})", &[&a.id, &e]),
+            )
+        })?;
+    }
+    for s in &export.activity_skips {
+        sqlx::query("INSERT OR IGNORE INTO activity_skips (activity_id, skip_date) VALUES (?, ?)")
+            .bind(s.activity_id)
+            .bind(&s.skip_date)
+            .execute(&mut *tx)
+            .await?;
+    }
+
     tx.commit().await?;
     Ok(ImportSummary {
         foods: export.foods.len(),
         diary_entries: export.diary_entries.len(),
         weight_entries: export.weight_entries.len(),
+        activities: export.activities.len(),
     })
 }
 

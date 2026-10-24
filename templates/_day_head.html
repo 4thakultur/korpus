@@ -1,0 +1,17 @@
+<header class="page-head day-head">
+  <p class="eyebrow">{{ date_label }}</p>
+  <div class="day-title">
+    <h1>{{ title }}</h1>
+    <div class="day-nav">
+      <form method="get" action="{{ day_path }}" class="date-pick">
+        <label for="date" class="visually-hidden">{{ date_field_label }}</label>
+        <input type="date" id="date" name="date" value="{{ date_iso }}" required data-autosubmit>
+        <button type="button" class="circle-button js-only" data-date-picker data-today="{{ today_iso }}" aria-label="{{ lang.t("Choose a date") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
+        <button type="submit" class="js-hidden pill">{{ lang.t("Go") }}</button>
+      </form>
+      <a class="circle-button" href="{{ day_path }}?date={{ prev_iso }}" rel="prev" aria-label="{{ lang.t("Previous day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"/></svg></a>
+      <a class="circle-button" href="{{ day_path }}?date={{ next_iso }}" rel="next" aria-label="{{ lang.t("Next day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg></a>
+    </div>
+  </div>
+</header>
+{% if !is_today %}<p class="today-link"><a class="button pill" href="{{ day_path }}?date={{ today_iso }}">{{ lang.t("Back to today") }}</a></p>{% endif %}

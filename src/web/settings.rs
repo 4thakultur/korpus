@@ -272,6 +272,8 @@ pub struct SettingsPage {
     /// The login's name and whether two-factor login is on.
     pub username: String,
     pub totp_enabled: bool,
+    /// The daily step goal as shown in its field.
+    pub step_goal: String,
 }
 
 async fn settings_page(
@@ -323,7 +325,34 @@ async fn settings_page(
             .map(|a| a.username.clone())
             .unwrap_or_default(),
         totp_enabled: account.is_some_and(|a| a.totp_enabled),
+        step_goal: p.step_goal.to_string(),
     })
+}
+
+#[derive(Deserialize)]
+pub struct StepGoalForm {
+    #[serde(default)]
+    step_goal: String,
+}
+
+pub async fn save_step_goal(
+    State(state): State<AppState>,
+    Form(form): Form<StepGoalForm>,
+) -> AppResult<Response> {
+    let lang = current_lang();
+    match crate::activity::check_step_goal(&form.step_goal, lang) {
+        Ok(goal) => {
+            crate::activity::set_step_goal(&state.db, goal).await?;
+            Ok(see_other("/settings?msg=step_goal_saved"))
+        }
+        Err(e) => {
+            let mut errors = FieldErrors::default();
+            errors.add("step_goal", e);
+            let mut page = settings_page(&state, lang, None, errors, None, None, None).await?;
+            page.step_goal = form.step_goal;
+            render_status(StatusCode::UNPROCESSABLE_ENTITY, &page)
+        }
+    }
 }
 
 #[derive(Deserialize)]

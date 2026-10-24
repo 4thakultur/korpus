@@ -1,0 +1,58 @@
+<div class="group">
+  <div class="form-row">
+    <label for="sport_key">{{ lang.t("Sport") }}</label>
+    <div class="control"><select id="sport_key" name="sport_key" required data-sport-menu {% if errors.has("sport_key") %}aria-invalid="true" aria-describedby="sport_key-error"{% endif %}>
+      {% for o in sports %}<option value="{{ o.value }}"{% if !o.icon.is_empty() %} data-icon="{{ o.icon }}"{% endif %}{% if o.selected %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+    </select></div>
+    {% if let Some(e) = errors.get("sport_key") %}<p class="field-error" id="sport_key-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="form-row" data-custom-only>
+    <label for="sport">{{ lang.t("Name") }}</label>
+    <div class="control"><input type="text" id="sport" name="sport" value="{{ form.sport }}" maxlength="80" autocomplete="off" {% if errors.has("sport") %}aria-invalid="true" aria-describedby="sport-error"{% endif %}></div>
+    {% if let Some(e) = errors.get("sport") %}<p class="field-error" id="sport-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="form-row" data-custom-only>
+    <label for="intensity">{{ lang.t("Intensity") }}</label>
+    <div class="control"><select id="intensity" name="intensity" aria-describedby="intensity-hint{% if errors.has("intensity") %} intensity-error{% endif %}" {% if errors.has("intensity") %}aria-invalid="true"{% endif %}>
+      {% for o in intensities %}<option value="{{ o.value }}"{% if o.selected %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+    </select></div>
+    {% if let Some(e) = errors.get("intensity") %}<p class="field-error" id="intensity-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="form-row">
+    <label for="duration">{{ lang.t("Duration") }}<span class="visually-hidden"> ({{ lang.t("minutes") }})</span></label>
+    <div class="control amount-input">
+      <input type="text" id="duration" name="duration" value="{{ form.duration }}" inputmode="numeric" required autocomplete="off" {% if errors.has("duration") %}aria-invalid="true" aria-describedby="duration-error"{% endif %}>
+      <span class="unit" aria-hidden="true">min</span>
+    </div>
+    {% if let Some(e) = errors.get("duration") %}<p class="field-error" id="duration-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="form-row">
+    <label for="start">{{ lang.t("Date") }}</label>
+    <div class="control"><input type="date" id="start" name="start" value="{{ form.start }}" required data-calendar aria-describedby="activity-hint{% if errors.has("start") %} start-error{% endif %}" {% if errors.has("start") %}aria-invalid="true"{% endif %}></div>
+    {% if let Some(e) = errors.get("start") %}<p class="field-error" id="start-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="form-row">
+    <label class="switch-row"><span class="switch-text">{{ lang.t("Repeat every week") }}</span><input type="checkbox" class="switch" id="repeat" name="repeat" value="on" data-repeat-toggle{% if form.repeat != "" %} checked{% endif %}></label>
+  </div>
+  <fieldset class="form-row stacked" id="days" data-repeat-only {% if errors.has("days") %}aria-describedby="days-error"{% endif %}>
+    <legend>{{ lang.t("Repeat on") }}</legend>
+    <div class="weekdays">
+      {% for d in days %}<label><input type="checkbox" name="day{{ d.index }}" value="on"{% if d.checked %} checked{% endif %}><span aria-hidden="true">{{ d.short }}</span><span class="visually-hidden">{{ d.long }}</span></label>{% endfor %}
+    </div>
+    {% if let Some(e) = errors.get("days") %}<p class="field-error" id="days-error">{{ e }}</p>{% endif %}
+  </fieldset>
+  <div class="form-row" data-repeat-only>
+    <label for="end">{{ lang.t("Until") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+    <div class="control"><input type="date" id="end" name="end" value="{{ form.end }}" data-calendar data-clearable aria-describedby="activity-hint{% if errors.has("end") %} end-error{% endif %}" {% if errors.has("end") %}aria-invalid="true"{% endif %}></div>
+    {% if let Some(e) = errors.get("end") %}<p class="field-error" id="end-error">{{ e }}</p>{% endif %}
+  </div>
+  <div class="form-row">
+    <label for="note">{{ lang.t("Note") }} <span class="opt">{{ lang.t("(optional)") }}</span></label>
+    <div class="control"><input type="text" id="note" name="note" value="{{ form.note }}" maxlength="500" autocomplete="off" {% if errors.has("note") %}aria-invalid="true" aria-describedby="note-error"{% endif %}></div>
+    {% if let Some(e) = errors.get("note") %}<p class="field-error" id="note-error">{{ e }}</p>{% endif %}
+  </div>
+</div>
+<div class="group-foot">
+  <p id="intensity-hint" data-custom-only>{{ lang.t("Easy: breathing stays easy. Moderate: you can talk but not sing. Hard: you can only say a few words at a time.") }}</p>
+  <p id="activity-hint">{{ lang.t("A repeating activity starts on the date above and continues every week until the end date, if you set one.") }}</p>
+</div>

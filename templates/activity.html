@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "_flash.html" %}
+{% include "_day_head.html" %}
+{% include "_errors.html" %}
+
+<section class="card steps-card c-activity" aria-labelledby="steps-heading">
+  <h2 id="steps-heading" class="eyebrow"><span class="dot" aria-hidden="true"></span>{{ lang.t("Steps") }}</h2>
+  <div class="energy">
+    <svg class="ring" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+      <circle class="ring-track" cx="60" cy="60" r="50"></circle>
+      {% if steps_pct > 0 %}<circle class="ring-value" cx="60" cy="60" r="50" pathLength="100" stroke-dasharray="{{ steps_pct }} 100" transform="rotate(-90 60 60)"></circle>{% endif %}
+    </svg>
+    <div class="energy-text">
+      <p class="big-number"><strong>{% if let Some(n) = steps %}{{ n }}{% else %}0{% endif %}</strong> {{ lang.f1("of {0} steps", step_goal) }}</p>
+      {% if steps.is_none() %}
+      <p class="goal-link">{{ lang.t("Record your steps at the end of the day.") }}</p>
+      {% else if let Some(k) = steps_kcal %}
+      <p class="remaining"><strong>+{{ k }} kcal</strong> {{ lang.t("added to this day's calorie target") }}</p>
+      {% else %}
+      <p class="goal-link">{{ lang.t("Add your height and weight to estimate the calories.") }} <a href="/goals">{{ lang.t("Goals") }}</a></p>
+      {% endif %}
+    </div>
+  </div>
+  <form method="post" action="/activity/steps" class="steps-form">
+    <input type="hidden" name="date" value="{{ date_iso }}">
+    <label for="steps">{{ lang.t("Steps walked") }}</label>
+    <div class="steps-entry">
+      <input type="text" id="steps" name="steps" value="{{ steps_input }}" inputmode="numeric" required autocomplete="off" aria-describedby="steps-hint{% if errors.has("steps") %} steps-error{% endif %}" {% if errors.has("steps") %}aria-invalid="true"{% endif %}>
+      <button type="submit" class="primary">{{ lang.t("Save") }}</button>
+    </div>
+    {% if let Some(e) = errors.get("steps") %}<p class="field-error" id="steps-error">{{ e }}</p>{% endif %}
+  </form>
+  {% if steps.is_some() %}
+  <form method="post" action="/activity/steps/clear" class="steps-reset">
+    <input type="hidden" name="date" value="{{ date_iso }}">
+    <button type="submit" class="plain">{{ lang.t("Delete steps") }}</button>
+  </form>
+  {% endif %}
+  <p class="hint" id="steps-hint">{{ lang.t("Calories are estimated from your height and weight and added to the day's target in the diary. If the activity level in Goals already includes this walking, it is counted twice; Sedentary avoids that.") }}</p>
+</section>
+
+<section class="section" aria-labelledby="sport-heading">
+  <div class="section-head"><h2 id="sport-heading">{{ lang.t("Sport") }}</h2>{% if !total_duration.is_empty() %}<p>{{ lang.f1("{0} in total", total_duration) }}</p>{% endif %}</div>
+  {% if activities.is_empty() %}
+    <div class="list"><p class="list-empty">{{ lang.t("No sport on this day.") }}</p></div>
+  {% else %}
+  <ul class="list">
+  {% for a in activities %}
+    <li><a class="row" href="{{ a.edit_url }}">
+      <svg class="sport-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/sports.svg?v={{ crate::web::ASSET_VERSION }}#{{ a.icon }}"/></svg>
+      <span class="row-main">
+        <span class="row-title">{{ a.sport }}</span>
+        {% if !a.repeat.is_empty() %}<span class="row-sub repeat-line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 11V9.5A3.5 3.5 0 0 1 7.5 6H20m-3-3 3 3-3 3M20 13v1.5a3.5 3.5 0 0 1-3.5 3.5H4m3 3-3-3 3-3"/></svg>{{ a.repeat }}</span>{% endif %}
+        {% if !a.note.is_empty() %}<span class="row-sub"><span class="visually-hidden">{{ lang.t("Note") }}:</span> {{ a.note }}</span>{% endif %}
+      </span>
+      <span class="row-value"><strong>{{ a.duration }}</strong>{% if let Some(k) = a.kcal %}<span class="row-sub">{{ k }} kcal</span>{% endif %}</span>
+      <span class="visually-hidden">— {{ lang.t("Edit") }}</span>
+      {% include "_chevron.html" %}
+    </a></li>
+  {% endfor %}
+  </ul>
+  {% if let Some(k) = sport_kcal %}
+  <p class="hint"><strong class="c-activity sport-kcal">+{{ k }} kcal</strong> {{ lang.t("added to this day's calorie target") }}</p>
+  {% else if sport_needs_weight %}
+  <p class="hint">{{ lang.t("Add your weight to estimate the calories.") }} <a href="/weight">{{ lang.t("Weight") }}</a></p>
+  {% endif %}
+  {% if !activities.is_empty() %}<p class="hint">{{ lang.t("Calories are estimated from the usual intensity of each sport, its duration and your weight, counting only what is spent above rest. If your step count already includes a walk or run listed here, it is counted twice.") }}</p>{% endif %}
+  {% endif %}
+</section>
+
+<section class="section" aria-labelledby="add-heading">
+  <div class="section-head"><h2 id="add-heading">{{ lang.t("Add sport") }}</h2></div>
+  <form method="post" action="/activity">
+    {% include "_activity_fields.html" %}
+    <button type="submit" class="primary block">{{ lang.t("Add sport") }}</button>
+  </form>
+</section>
+
+{% endblock %}

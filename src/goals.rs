@@ -237,6 +237,83 @@ pub fn estimate(input: &EstimateInput) -> Estimate {
     }
 }
 
+/// Atwater energy factors used to turn grams into kcal and back.
+pub const KCAL_PER_G_PROTEIN: f64 = 4.0;
+pub const KCAL_PER_G_CARBS: f64 = 4.0;
+pub const KCAL_PER_G_FAT: f64 = 9.0;
+/// Share of the energy target suggested as fat, mid-range of the 20–35 %
+/// adult reference intake (EFSA, US Dietary Reference Intakes).
+pub const FAT_ENERGY_SHARE: f64 = 0.30;
+/// Protein never takes more than this share of the energy target, so a high
+/// body weight on a low target still leaves room for carbohydrate.
+pub const MAX_PROTEIN_ENERGY_SHARE: f64 = 0.35;
+/// Extra protein per kg for the two highest activity levels.
+pub const ACTIVE_PROTEIN_BONUS_G_PER_KG: f64 = 0.2;
+
+impl Goal {
+    /// Protein per kg of body weight. Above the 0.8 g/kg adult reference
+    /// intake: more protein helps keep lean mass during a calorie deficit
+    /// and supports building it in a surplus.
+    pub fn protein_g_per_kg(self) -> f64 {
+        match self {
+            Goal::Maintain => 1.2,
+            Goal::LoseSlow => 1.4,
+            Goal::Lose | Goal::GainSlow => 1.6,
+        }
+    }
+}
+
+/// Inputs for the macronutrient estimate.
+#[derive(Clone, Copy, Debug)]
+pub struct MacroInput {
+    /// The daily calorie target, without recorded activity.
+    pub target_kcal: f64,
+    pub weight_kg: f64,
+    pub goal: Goal,
+    pub activity: Option<Activity>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MacroEstimate {
+    pub protein_g: f64,
+    pub carbs_g: f64,
+    pub fat_g: f64,
+    /// The protein rate applied, before the energy-share limit.
+    pub protein_g_per_kg: f64,
+    /// Protein was lowered to [`MAX_PROTEIN_ENERGY_SHARE`] of the target.
+    pub protein_limited: bool,
+}
+
+/// Splits a calorie target into protein, fat and carbohydrate goals:
+/// protein from body weight, goal and activity level; fat as
+/// [`FAT_ENERGY_SHARE`] of the energy; carbohydrate takes the rest. The
+/// three add up to the target.
+pub fn estimate_macros(i: &MacroInput) -> MacroEstimate {
+    let mut per_kg = i.goal.protein_g_per_kg();
+    if matches!(i.activity, Some(Activity::Active | Activity::VeryActive)) {
+        per_kg += ACTIVE_PROTEIN_BONUS_G_PER_KG;
+    }
+    let max_protein_g = i.target_kcal * MAX_PROTEIN_ENERGY_SHARE / KCAL_PER_G_PROTEIN;
+    let wanted_g = per_kg * i.weight_kg;
+    let protein_g = wanted_g.min(max_protein_g);
+    let fat_g = i.target_kcal * FAT_ENERGY_SHARE / KCAL_PER_G_FAT;
+    let carbs_kcal = i.target_kcal - protein_g * KCAL_PER_G_PROTEIN - fat_g * KCAL_PER_G_FAT;
+    MacroEstimate {
+        protein_g,
+        carbs_g: carbs_kcal / KCAL_PER_G_CARBS,
+        fat_g,
+        protein_g_per_kg: per_kg,
+        protein_limited: wanted_g > max_protein_g,
+    }
+}
+
+/// Carbohydrate added to an estimated goal on a day with recorded steps or
+/// sport: the activity's energy, as carbohydrate is the main fuel of
+/// exercise. Protein and fat goals stay the same from day to day.
+pub fn activity_carbs_g(activity_kcal: f64) -> f64 {
+    activity_kcal.max(0.0) / KCAL_PER_G_CARBS
+}
+
 /// Whole years between `birth` and `on`.
 pub fn age_on(birth: Date, on: Date) -> i32 {
     let mut age = i32::from(on.year()) - i32::from(birth.year());
@@ -285,14 +362,22 @@ pub struct GoalSettings {
     pub protein_goal_g: Option<f64>,
     pub carbs_goal_g: Option<f64>,
     pub fat_goal_g: Option<f64>,
+    /// 'estimate' or 'custom'; see migration 0011.
+    pub macro_source: Option<String>,
     pub updated_at: String,
+}
+
+impl GoalSettings {
+    pub fn macros_estimated(&self) -> bool {
+        self.macro_source.as_deref() == Some("estimate")
+    }
 }
 
 pub async fn load(db: &SqlitePool) -> AppResult<GoalSettings> {
     Ok(sqlx::query_as::<_, GoalSettings>(
         "SELECT daily_kcal_target, target_source, goal, sex, birth_date, height_cm, weight_kg,
                 activity, special_circumstances, maintenance_kcal, calculation_version,
-                protein_goal_g, carbs_goal_g, fat_goal_g, updated_at
+                protein_goal_g, carbs_goal_g, fat_goal_g, macro_source, updated_at
          FROM goal_settings WHERE id = 1",
     )
     .fetch_one(db)
@@ -304,7 +389,7 @@ pub async fn save(db: &SqlitePool, g: &GoalSettings) -> AppResult<()> {
         "UPDATE goal_settings SET daily_kcal_target = ?, target_source = ?, goal = ?, sex = ?,
                 birth_date = ?, height_cm = ?, weight_kg = ?, activity = ?,
                 special_circumstances = ?, maintenance_kcal = ?, calculation_version = ?,
-                protein_goal_g = ?, carbs_goal_g = ?, fat_goal_g = ?,
+                protein_goal_g = ?, carbs_goal_g = ?, fat_goal_g = ?, macro_source = ?,
                 updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
          WHERE id = 1",
     )
@@ -322,6 +407,7 @@ pub async fn save(db: &SqlitePool, g: &GoalSettings) -> AppResult<()> {
     .bind(g.protein_goal_g)
     .bind(g.carbs_goal_g)
     .bind(g.fat_goal_g)
+    .bind(&g.macro_source)
     .execute(db)
     .await?;
     Ok(())
@@ -442,6 +528,68 @@ mod tests {
         assert_eq!(age_on(date(1990, 6, 15), date(2026, 6, 15)), 36);
         assert_eq!(age_on(date(2000, 2, 29), date(2026, 2, 28)), 25);
         assert_eq!(age_on(date(2000, 2, 29), date(2026, 3, 1)), 26);
+    }
+
+    fn macro_kcal(m: &MacroEstimate) -> f64 {
+        m.protein_g * KCAL_PER_G_PROTEIN + m.carbs_g * KCAL_PER_G_CARBS + m.fat_g * KCAL_PER_G_FAT
+    }
+
+    #[test]
+    fn macros_add_up_to_the_target() {
+        let m = estimate_macros(&MacroInput {
+            target_kcal: 2400.0,
+            weight_kg: 80.0,
+            goal: Goal::Maintain,
+            activity: Some(Activity::Moderate),
+        });
+        // 1.2 g/kg × 80 kg = 96 g; 30 % of 2400 kcal = 80 g fat; carbs take
+        // the remaining 2400 − 384 − 720 = 1296 kcal.
+        assert!((m.protein_g - 96.0).abs() < 1e-9);
+        assert!((m.fat_g - 80.0).abs() < 1e-9);
+        assert!((m.carbs_g - 324.0).abs() < 1e-9);
+        assert!((macro_kcal(&m) - 2400.0).abs() < 1e-9);
+        assert!(!m.protein_limited);
+    }
+
+    #[test]
+    fn protein_follows_goal_and_activity_level() {
+        let at = |goal, activity| {
+            estimate_macros(&MacroInput {
+                target_kcal: 2500.0,
+                weight_kg: 70.0,
+                goal,
+                activity,
+            })
+            .protein_g
+        };
+        assert!((at(Goal::Maintain, None) - 84.0).abs() < 1e-9);
+        assert!((at(Goal::LoseSlow, None) - 98.0).abs() < 1e-9);
+        assert!((at(Goal::Lose, None) - 112.0).abs() < 1e-9);
+        assert!((at(Goal::GainSlow, None) - 112.0).abs() < 1e-9);
+        assert!((at(Goal::Lose, Some(Activity::Light)) - 112.0).abs() < 1e-9);
+        assert!((at(Goal::Lose, Some(Activity::Active)) - 126.0).abs() < 1e-9);
+        assert!((at(Goal::Maintain, Some(Activity::VeryActive)) - 98.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn protein_is_limited_on_a_low_target_and_carbs_stay_positive() {
+        let m = estimate_macros(&MacroInput {
+            target_kcal: 1200.0,
+            weight_kg: 130.0,
+            goal: Goal::Lose,
+            activity: Some(Activity::Active),
+        });
+        assert!(m.protein_limited);
+        assert!((m.protein_g * KCAL_PER_G_PROTEIN - 420.0).abs() < 1e-9);
+        assert!(m.carbs_g > 0.0);
+        assert!((macro_kcal(&m) - 1200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn activity_energy_goes_to_carbohydrate() {
+        assert_eq!(activity_carbs_g(0.0), 0.0);
+        assert_eq!(activity_carbs_g(300.0), 75.0);
+        assert_eq!(activity_carbs_g(-5.0), 0.0);
     }
 
     #[test]

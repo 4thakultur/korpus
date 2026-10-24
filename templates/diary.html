@@ -1,23 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 {% include "_flash.html" %}
-<header class="page-head day-head">
-  <p class="eyebrow">{{ date_label }}</p>
-  <div class="day-title">
-    <h1>{{ title }}</h1>
-    <div class="day-nav">
-      <form method="get" action="/diary" class="date-pick">
-        <label for="date" class="visually-hidden">{{ lang.t("Diary date") }}</label>
-        <input type="date" id="date" name="date" value="{{ date_iso }}" required data-autosubmit>
-        <button type="button" class="circle-button js-only" data-date-picker data-today="{{ today_iso }}" aria-label="{{ lang.t("Choose a date") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></button>
-        <button type="submit" class="js-hidden pill">{{ lang.t("Go") }}</button>
-      </form>
-      <a class="circle-button" href="/diary?date={{ prev_iso }}" rel="prev" aria-label="{{ lang.t("Previous day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 5-7 7 7 7"/></svg></a>
-      <a class="circle-button" href="/diary?date={{ next_iso }}" rel="next" aria-label="{{ lang.t("Next day") }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg></a>
-    </div>
-  </div>
-</header>
-{% if !is_today %}<p class="today-link"><a class="button pill" href="/diary?date={{ today_iso }}">{{ lang.t("Back to today") }}</a></p>{% endif %}
+{% include "_day_head.html" %}
 
 <section class="card summary" aria-labelledby="summary-heading">
   <h2 id="summary-heading" class="visually-hidden">{{ lang.t("Daily summary") }}</h2>
@@ -33,6 +17,7 @@
       <p class="big-number"><strong>{{ consumed }}</strong> {{ lang.f1("of {0} kcal", t) }}</p>
       {% if let Some(r) = remaining %}<p class="remaining"><strong>{{ r }} kcal</strong> {{ lang.t("remaining") }}</p>{% endif %}
       {% if let Some(o) = over %}<p class="remaining"><strong>{{ o }} kcal</strong> {{ lang.t("above target") }}</p>{% endif %}
+      {% for b in activity_bonus %}<p class="steps-bonus c-activity"><a href="/activity?date={{ date_iso }}"><span class="dot" aria-hidden="true"></span>{{ b }}</a></p>{% endfor %}
     {% else %}
       <p class="big-number"><strong>{{ consumed }}</strong> {{ lang.t("kcal eaten") }}</p>
       <p class="goal-link">{{ lang.t("No daily target set.") }} <a href="/goals">{{ lang.t("Set a goal") }}</a></p>

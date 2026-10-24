@@ -1,5 +1,6 @@
 //! HTTP routing, middleware and shared handler helpers.
 
+mod activity;
 mod auth;
 mod diary;
 mod foods;
@@ -101,6 +102,13 @@ pub fn router(state: AppState) -> Router {
         .route("/foods/{id}", get(foods::detail).post(foods::update))
         .route("/foods/{id}/edit", get(foods::edit_form))
         .route("/foods/{id}/delete", get(foods::delete_confirm).post(foods::delete))
+        .route("/activity", get(activity::page).post(activity::create))
+        .route("/activity/steps", post(activity::save_steps))
+        .route("/activity/steps/clear", post(activity::clear_steps))
+        .route("/activity/{id}/edit", get(activity::edit_form))
+        .route("/activity/{id}", post(activity::update))
+        .route("/activity/{id}/skip", post(activity::skip))
+        .route("/activity/{id}/delete", post(activity::delete))
         .route("/weight", get(weight::page).post(weight::create))
         .route("/weight/{id}/edit", get(weight::edit_form))
         .route("/weight/{id}", post(weight::update))
@@ -108,6 +116,7 @@ pub fn router(state: AppState) -> Router {
         .route("/goals", get(goals::page).post(goals::save))
         .route("/settings", get(settings::page).post(settings::save))
         .route("/settings/appearance", post(settings::appearance))
+        .route("/settings/steps", post(settings::save_step_goal))
         .route("/settings/export.json", get(settings::export_json))
         .route("/settings/diary.csv", get(settings::export_csv))
         .route("/settings/backup.sqlite", get(settings::backup))
@@ -119,6 +128,7 @@ pub fn router(state: AppState) -> Router {
         .route("/static/app.css", get(static_css))
         .route("/static/app.js", get(static_js))
         .route("/static/favicon.svg", get(static_favicon))
+        .route("/static/sports.svg", get(static_sports))
         // Also at the root, where Safari looks when a page names no icon.
         .route("/apple-touch-icon.png", get(static_touch_icon))
         .route("/static/apple-touch-icon.png", get(static_touch_icon))
@@ -354,6 +364,10 @@ async fn static_favicon() -> Response {
     static_asset("image/svg+xml", include_bytes!("../../static/favicon.svg"))
 }
 
+async fn static_sports() -> Response {
+    static_asset("image/svg+xml", SPORTS_SVG.as_bytes())
+}
+
 /// Safari uses this for bookmarks, Favorites and home-screen icons; SVG is
 /// not accepted there. Regenerate it from favicon.svg (full-bleed: iOS
 /// rounds the corners itself) when the icon changes.
@@ -366,13 +380,17 @@ async fn static_touch_icon() -> Response {
 
 const APP_CSS: &str = include_str!("../../static/app.css");
 const APP_JS: &str = include_str!("../../static/app.js");
+const SPORTS_SVG: &str = include_str!("../../static/sports.svg");
 
 /// Asset version appended to static URLs: a hash of their contents, so
-/// browsers refetch whenever the CSS or script changes, even within one
+/// browsers refetch whenever the CSS, script or icons change, even within one
 /// release (they are cached for a day).
 pub const ASSET_VERSION: u64 = fnv1a(
-    APP_JS.as_bytes(),
-    fnv1a(APP_CSS.as_bytes(), 0xcbf2_9ce4_8422_2325),
+    SPORTS_SVG.as_bytes(),
+    fnv1a(
+        APP_JS.as_bytes(),
+        fnv1a(APP_CSS.as_bytes(), 0xcbf2_9ce4_8422_2325),
+    ),
 );
 
 const fn fnv1a(bytes: &[u8], mut hash: u64) -> u64 {
@@ -409,6 +427,13 @@ pub fn flash_message(key: Option<&str>, lang: Lang) -> Option<&'static str> {
         "food_saved" => lang.t("Food saved. Existing diary entries keep their logged values."),
         "food_deleted" => lang.t("Food deleted. Existing diary entries keep their logged values."),
         "history_cleared" => lang.t("History cleared. Your diary and saved foods are unchanged."),
+        "steps_saved" => lang.t("Steps saved."),
+        "steps_deleted" => lang.t("Steps deleted."),
+        "step_goal_saved" => lang.t("Step goal saved."),
+        "activity_added" => lang.t("Activity added."),
+        "activity_saved" => lang.t("Activity updated."),
+        "activity_skipped" => lang.t("Activity skipped on this day."),
+        "activity_deleted" => lang.t("Activity deleted."),
         "weight_saved" => lang.t("Weight recorded."),
         "weight_replaced" => lang.t("Weight for that date updated."),
         "weight_deleted" => lang.t("Weight entry deleted."),

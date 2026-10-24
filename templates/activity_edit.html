@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back-link" href="{{ back_url }}">{% include "_back.html" %}{{ lang.t("Back to activity") }}</a>
+<header class="page-head"><h1>{{ title }}</h1></header>
+{% include "_errors.html" %}
+<form method="post" action="/activity/{{ id }}">
+  <input type="hidden" name="from" value="{{ date_iso }}">
+  {% include "_activity_fields.html" %}
+  {% if repeats %}<p class="note">{{ lang.t("Changes apply to every day this activity repeats on, including past days. To stop it from a given day, set an end date.") }}</p>{% endif %}
+  <ul class="actions stacked">
+    <li><button type="submit" class="primary">{{ lang.t("Save") }}</button></li>
+    <li><a class="button" href="{{ back_url }}">{{ lang.t("Cancel") }}</a></li>
+  </ul>
+</form>
+{% if let Some(label) = skip_label %}
+<form method="post" action="/activity/{{ id }}/skip" class="skip-form">
+  <input type="hidden" name="date" value="{{ date_iso }}">
+  <button type="submit" class="block">{{ label }}</button>
+</form>
+{% endif %}
+<form method="post" action="/activity/{{ id }}/delete" data-confirm="{{ lang.t("Delete this activity?") }}"{% if repeats %} data-confirm-detail="{{ lang.t("It is removed from every day it repeats on, including past days.") }}"{% endif %}>
+  <input type="hidden" name="date" value="{{ date_iso }}">
+  <button type="submit" class="danger block">{{ lang.t("Delete activity") }}</button>
+</form>
+{% endblock %}

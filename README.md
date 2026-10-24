@@ -256,6 +256,9 @@ a database or export that contains Open Food Facts products, the ODbL
 share-alike and attribution terms apply to that data. See
 <https://world.openfoodfacts.org/terms-of-use>.
 
+The sport icons (`static/sports.svg`) come from
+[Tabler Icons](https://tabler.io/icons), © Paweł Kuna, under the MIT License.
+
 ## Food composition tables
 
 Open Food Facts covers packaged products well but generic foods poorly. For
@@ -467,6 +470,76 @@ advice instead. Custom targets must be between 800 and 6000 kcal, and you get
 a caution below 1200. The target is recalculated only when you save the goal
 form, never when you log a new weight.
 
+### Macronutrient goals
+
+Protein, carbohydrate and fat goals can be entered by hand or estimated from
+the daily calorie target, the goal and the weight in Goals:
+
+- **Protein:** 1.2 g per kg of body weight to maintain, 1.4 g to lose
+  slowly, 1.6 g to lose or to gain, plus 0.2 g for the *Very active* and
+  *Extra active* activity levels. It never takes more than 35% of the
+  energy target. All rates are above the 0.8 g/kg adult reference intake:
+  more protein helps keep lean mass during a deficit.
+- **Fat:** 30% of the energy target, mid-range of the 20–35% adult
+  reference intake.
+- **Carbohydrate:** the rest of the energy (4 kcal per gram of protein or
+  carbohydrate, 9 per gram of fat), so the three add up to the target.
+
+On a day with recorded steps or sport, the energy that activity adds to the
+calorie target (see [Activity](#activity)) is added to that day's
+carbohydrate goal, the main fuel of exercise; protein and fat stay the same
+every day. Goals you enter yourself are never adjusted. As with the calorie
+target, the estimate is recalculated only when you save the goal form, it
+uses the same goal rules for pregnancy, breastfeeding or a medical condition,
+and Korpus gives no estimate for people under 18.
+
+## Activity
+
+The Activity tab records what you did on a day, entered by hand:
+
+- **Steps.** Record the steps you walked, for example at the end of the
+  day. The ring fills at your daily step goal (10,000 unless you change it
+  in Settings → Activity). A day without recorded steps shows 0; nothing is
+  assumed.
+- **Sport.** Pick the sport from the list (the workout types of Apple
+  Health) or choose *Custom* to name your own and say how hard it is (easy,
+  moderate or hard), then enter how many minutes it lasted and an optional
+  note. A session happens once, or repeats every week on chosen days from
+  its first day, optionally until an end date. Editing a repeating activity
+  changes every day it repeats on, past days included. Set an end date to
+  stop it from a given day, or skip a single day from its edit page.
+
+Recorded steps are turned into an approximate energy estimate that the
+diary adds to **that day's** calorie target (only when a target is set):
+
+- distance = steps × 0.414 × height (a common stride estimate);
+- energy = 0.5 kcal × body weight (kg) × distance (km), the net cost of
+  level walking above rest from the ACSM walking equation.
+
+For example, 10,000 steps at 175 cm and 75 kg are about 7.2 km and 270 kcal.
+Height comes from Goals; weight is the last weigh-in on or before that day
+(otherwise the weight in Goals), so later weigh-ins never change past days.
+Without a height and a weight, no estimate is made. Pace, hills and
+individual differences are ignored, so treat the number as a rough guide.
+The activity level in Goals already accounts for everyday movement: if you
+record your steps, choose *Sedentary* there so walking is not counted twice.
+
+Sport sessions are estimated the same way and added to the same target:
+
+- each listed sport has a MET value (energy use as a multiple of resting)
+  from the general or moderate-effort entry of the Compendium of Physical
+  Activities; a custom sport uses 2.5, 4.5 or 7.5 METs for easy, moderate
+  or hard;
+- energy = (METs − 1) × body weight (kg) × hours, counting only what is
+  spent above rest, which the target already includes.
+
+For example, 30 minutes of running (9 METs) at 75 kg is about 300 kcal. The
+weight is chosen as for steps. If the step count you enter already includes
+a walk or run you also record as a sport, it is counted twice. Sessions
+recorded before the list existed get no estimate until you edit them and
+choose a sport.
+Activity data is included in the JSON export and the database backup.
+
 ## Development
 
 ```sh
@@ -493,7 +566,7 @@ Code layout (`src/`):
 | `countries` | Country list (names in each interface language) |
 | `diary` | Meals, entries with nutrition snapshots, daily totals |
 | `weight` | Weight history (canonical kg) |
-| `goals` | Mifflin–St Jeor estimate, safety rules, goal settings |
+| `goals` | Mifflin–St Jeor estimate, macronutrient split, safety rules, goal settings |
 | `units` | Metric/imperial conversion, calendar dates per time zone, input parsing |
 | `backup` | JSON/CSV export, JSON import, SQLite snapshots |
 | `i18n` | Interface languages, `Accept-Language` negotiation, French and Spanish catalog |
