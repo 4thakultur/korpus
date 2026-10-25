@@ -69,6 +69,10 @@
     <a class="row download" href="/settings/diary.csv" download><span class="row-main row-title">{{ lang.t("Diary (CSV)") }}</span>{% include "_download.html" %}</a>
   </div>
   <p class="section-note">{{ lang.t("Everything stays on this server. Download a copy regularly.") }} {{ lang.t("The database backup is a consistent snapshot that can replace the database file to restore. The JSON export can be imported into a new, empty Korpus installation.") }}</p>
+  <form method="post" action="/settings/reset" class="reset-profile" data-confirm="{{ lang.t("Reset your profile?") }}" data-confirm-detail="{{ lang.t("Your foods, diary, weights, activity, gym programs and workouts, goals and settings are erased for good. Your username, password and two-factor authentication are kept.") }}" data-confirm-action="{{ lang.t("Reset") }}">
+    <button type="submit" class="danger block" aria-describedby="reset-hint">{{ lang.t("Reset profile") }}</button>
+  </form>
+  <p class="section-note" id="reset-hint">{{ lang.t("Erases everything you recorded and starts setup again. Your login and food composition tables are kept. Download a backup first if you may want it back.") }}</p>
 </section>
 
 <section class="section" aria-labelledby="import-heading">

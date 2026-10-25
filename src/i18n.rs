@@ -2797,6 +2797,181 @@ pub const CATALOG: &[(&str, &str, &str)] = &[
     ),
     ("None", "Aucune", "Ninguna"),
     ("In progress", "En cours", "En curso"),
+    (
+        "Previous question",
+        "Question précédente",
+        "Pregunta anterior",
+    ),
+    (
+        "Setup progress",
+        "Progression de la configuration",
+        "Progreso de la configuración",
+    ),
+    (
+        "Question {0} of {1}",
+        "Question {0} sur {1}",
+        "Pregunta {0} de {1}",
+    ),
+    (
+        "How many steps do you take on a usual day?",
+        "Combien de pas faites-vous un jour habituel ?",
+        "¿Cuántos pasos das en un día normal?",
+    ),
+    (
+        "Used to suggest an activity level for the calorie estimate in Goals. A rough guess is fine; your phone or watch may show a daily average.",
+        "Sert à proposer un niveau d'activité pour l'estimation des calories dans Objectifs. Une estimation approximative suffit ; votre téléphone ou votre montre affiche peut-être une moyenne quotidienne.",
+        "Sirve para sugerir un nivel de actividad para la estimación de calorías en Objetivos. Basta con un cálculo aproximado; tu teléfono o reloj puede mostrar una media diaria.",
+    ),
+    (
+        "Under 5,000 steps",
+        "Moins de 5 000 pas",
+        "Menos de 5000 pasos",
+    ),
+    (
+        "5,000 to 10,000 steps",
+        "De 5 000 à 10 000 pas",
+        "De 5000 a 10 000 pasos",
+    ),
+    (
+        "10,000 to 15,000 steps",
+        "De 10 000 à 15 000 pas",
+        "De 10 000 a 15 000 pasos",
+    ),
+    (
+        "Over 15,000 steps",
+        "Plus de 15 000 pas",
+        "Más de 15 000 pasos",
+    ),
+    (
+        "Mostly sitting, e.g. office work and travel by car",
+        "Surtout assis, p. ex. travail de bureau et trajets en voiture",
+        "Casi siempre sentado, p. ej. trabajo de oficina y viajes en coche",
+    ),
+    (
+        "Some walking during the day",
+        "Un peu de marche dans la journée",
+        "Algo de caminata durante el día",
+    ),
+    (
+        "On my feet a lot, or long daily walks",
+        "Souvent debout, ou de longues marches chaque jour",
+        "Mucho tiempo de pie, o largos paseos diarios",
+    ),
+    (
+        "A physical job, or walking most of the day",
+        "Un travail physique, ou de la marche presque toute la journée",
+        "Un trabajo físico, o caminar casi todo el día",
+    ),
+    ("I am not sure", "Je ne sais pas", "No lo sé"),
+    (
+        "Do you play a sport?",
+        "Pratiquez-vous un sport ?",
+        "¿Practicas algún deporte?",
+    ),
+    (
+        "Apart from the gym. Think of a usual week, not an exceptional one.",
+        "En dehors de la muscu. Pensez à une semaine habituelle, pas exceptionnelle.",
+        "Aparte del gimnasio. Piensa en una semana normal, no en una excepcional.",
+    ),
+    (
+        "Do you train at the gym?",
+        "Faites-vous de la muscu ?",
+        "¿Entrenas en el gimnasio?",
+    ),
+    (
+        "Weight training with machines or free weights, at a gym or at home.",
+        "Entraînement avec machines ou poids libres, en salle ou à la maison.",
+        "Entrenamiento con máquinas o pesos libres, en el gimnasio o en casa.",
+    ),
+    (
+        "On which days do you go to the gym?",
+        "Quels jours faites-vous de la muscu ?",
+        "¿Qué días vas al gimnasio?",
+    ),
+    (
+        "Korpus adds these sessions to Activity every week, so the energy they use counts in each day's total. You can change or skip a day there.",
+        "Korpus ajoute ces séances à Activité chaque semaine : l'énergie qu'elles dépensent compte dans le total de chaque jour. Vous pouvez y modifier ou sauter un jour.",
+        "Korpus añade estas sesiones a Actividad cada semana, así la energía que gastan cuenta en el total de cada día. Allí puedes cambiar u omitir un día.",
+    ),
+    (
+        "How long is a usual gym session?",
+        "Combien de temps dure une séance de muscu habituelle ?",
+        "¿Cuánto dura una sesión de gimnasio normal?",
+    ),
+    (
+        "Start with a gym program?",
+        "Commencer avec un programme de muscu ?",
+        "¿Empezar con un programa de gimnasio?",
+    ),
+    ("Not now", "Pas maintenant", "Ahora no"),
+    (
+        "Plan your own later in Activity, under Gym",
+        "Créez le vôtre plus tard dans Activité, sous Muscu",
+        "Crea el tuyo más tarde en Actividad, en Gimnasio",
+    ),
+    ("Yes", "Oui", "Sí"),
+    ("No", "Non", "No"),
+    (
+        "At least once a week",
+        "Au moins une fois par semaine",
+        "Al menos una vez por semana",
+    ),
+    ("Not at the moment", "Pas en ce moment", "Ahora mismo no"),
+    ("Which sport?", "Quel sport ?", "¿Qué deporte?"),
+    (
+        "If you play several, choose the one you do most.",
+        "Si vous en pratiquez plusieurs, choisissez celui que vous pratiquez le plus.",
+        "Si practicas varios, elige el que más practicas.",
+    ),
+    ("Another sport", "Un autre sport", "Otro deporte"),
+    ("On which days?", "Quels jours ?", "¿Qué días?"),
+    (
+        "How long is a usual session?",
+        "Combien de temps dure une séance habituelle ?",
+        "¿Cuánto dura una sesión normal?",
+    ),
+    ("{0} or more", "{0} ou plus", "{0} o más"),
+    (
+        "Choose one of the options.",
+        "Choisissez l'une des options.",
+        "Elige una de las opciones.",
+    ),
+    (
+        "Choose how long a session usually lasts.",
+        "Choisissez la durée habituelle d'une séance.",
+        "Elige cuánto suele durar una sesión.",
+    ),
+    (
+        "usual activity",
+        "activité habituelle",
+        "actividad habitual",
+    ),
+    (
+        "From your answers, the activity level is set to “{0}”. It already includes your usual steps and sport: if you also record them in Activity, choose Sedentary so they are not counted twice.",
+        "D'après vos réponses, le niveau d'activité est réglé sur « {0} ». Il inclut déjà vos pas et votre sport habituels : si vous les enregistrez aussi dans Activité, choisissez Sédentaire pour qu'ils ne soient pas comptés deux fois.",
+        "Según tus respuestas, el nivel de actividad es «{0}». Ya incluye tus pasos y tu deporte habituales: si también los registras en Actividad, elige Sedentario para que no se cuenten dos veces.",
+    ),
+    (
+        "Reset your profile?",
+        "Réinitialiser votre profil ?",
+        "¿Restablecer tu perfil?",
+    ),
+    (
+        "Your foods, diary, weights, activity, gym programs and workouts, goals and settings are erased for good. Your username, password and two-factor authentication are kept.",
+        "Vos aliments, journal, poids, activités, programmes et séances de musculation, objectifs et réglages sont définitivement effacés. Votre nom d'utilisateur, votre mot de passe et l'authentification à deux facteurs sont conservés.",
+        "Tus alimentos, diario, pesos, actividad, programas y entrenamientos de gimnasio, objetivos y ajustes se borran para siempre. Tu nombre de usuario, tu contraseña y la autenticación en dos pasos se conservan.",
+    ),
+    ("Reset", "Réinitialiser", "Restablecer"),
+    (
+        "Reset profile",
+        "Réinitialiser le profil",
+        "Restablecer perfil",
+    ),
+    (
+        "Erases everything you recorded and starts setup again. Your login and food composition tables are kept. Download a backup first if you may want it back.",
+        "Efface tout ce que vous avez enregistré et relance la configuration. Votre connexion et les tables de composition des aliments sont conservées. Téléchargez d'abord une sauvegarde si vous pourriez en avoir besoin.",
+        "Borra todo lo que has registrado y vuelve a iniciar la configuración. Se conservan tu inicio de sesión y las tablas de composición de alimentos. Descarga antes una copia de seguridad si quizá la necesites.",
+    ),
 ];
 
 #[cfg(test)]

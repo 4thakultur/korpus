@@ -1,5 +1,5 @@
 //! The single local profile: setup state, units, time zone, language,
-//! country and daily step goal.
+//! country, daily step goal and usual activity (see [`crate::habits`]).
 
 use sqlx::SqlitePool;
 
@@ -24,6 +24,24 @@ pub struct Profile {
     /// goals existed.
     #[serde(default = "default_step_goal")]
     pub step_goal: i64,
+    /// Usual activity answered at setup; see [`crate::habits`]. Absent in
+    /// exports made before these questions existed.
+    #[serde(default)]
+    pub usual_steps: Option<String>,
+    #[serde(default)]
+    pub plays_sport: Option<bool>,
+    #[serde(default)]
+    pub sport_key: Option<String>,
+    #[serde(default)]
+    pub sport_sessions: Option<i64>,
+    #[serde(default)]
+    pub sport_minutes: Option<i64>,
+    #[serde(default)]
+    pub goes_to_gym: Option<bool>,
+    #[serde(default)]
+    pub gym_sessions: Option<i64>,
+    #[serde(default)]
+    pub gym_minutes: Option<i64>,
 }
 
 fn default_step_goal() -> i64 {
@@ -46,7 +64,9 @@ impl Profile {
 
 pub async fn load(db: &SqlitePool) -> AppResult<Profile> {
     Ok(sqlx::query_as::<_, Profile>(
-        "SELECT setup_complete, unit_system, timezone, language, country, step_goal
+        "SELECT setup_complete, unit_system, timezone, language, country, step_goal,
+                usual_steps, plays_sport, sport_key, sport_sessions, sport_minutes,
+                goes_to_gym, gym_sessions, gym_minutes
          FROM profile WHERE id = 1",
     )
     .fetch_one(db)

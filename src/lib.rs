@@ -13,6 +13,7 @@ pub mod foods;
 pub mod forms;
 pub mod goals;
 pub mod gym;
+pub mod habits;
 pub mod i18n;
 pub mod nutrition;
 pub mod profile;

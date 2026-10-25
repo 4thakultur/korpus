@@ -241,15 +241,50 @@ fn schedule_of(s: &Starter) -> Schedule {
     }
 }
 
-/// Creates a program from a starter, all at once or not at all.
-pub async fn create(db: &SqlitePool, s: &Starter, name: &str, lang: Lang) -> AppResult<i64> {
+/// Each routine's days when a weekly starter is moved onto `days`: the
+/// sessions keep their order through the week. `None` when the starter is
+/// a rotation or has a different number of sessions a week.
+fn moved_to(s: &Starter, days: Weekdays) -> Option<Vec<Weekdays>> {
+    if schedule_of(s) != Schedule::Weekly || days.count() != s.days_per_week() {
+        return None;
+    }
+    let mut sessions: Vec<(usize, usize)> = s
+        .routines
+        .iter()
+        .enumerate()
+        .flat_map(|(r, (_, ds, _))| ds.iter().map(move |d| (*d, r)))
+        .collect();
+    sessions.sort_unstable();
+    let mut moved = vec![Weekdays::NONE; s.routines.len()];
+    for ((_, r), day) in sessions.into_iter().zip((0..7).filter(|i| days.has(*i))) {
+        moved[r] = moved[r].with(day);
+    }
+    Some(moved)
+}
+
+/// Creates a program from a starter, all at once or not at all. With
+/// `days`, the sessions go on those days of the week; when the starter has
+/// a different number of sessions, the program becomes a rotation, done in
+/// order on whichever days the user trains.
+pub async fn create(
+    db: &SqlitePool,
+    s: &Starter,
+    name: &str,
+    lang: Lang,
+    days: Option<Weekdays>,
+) -> AppResult<i64> {
     let mut tx = db.begin().await?;
-    let schedule = schedule_of(s);
+    let moved = days.and_then(|d| moved_to(s, d));
+    let schedule = match days {
+        Some(_) if moved.is_none() => Schedule::Rotation,
+        _ => schedule_of(s),
+    };
     let program_id = insert_program(&mut tx, name, schedule).await?;
-    for (key, days, slots) in s.routines {
-        let days = match schedule {
-            Schedule::Weekly => days.iter().fold(Weekdays::NONE, |w, d| w.with(*d)),
-            Schedule::Rotation => Weekdays::NONE,
+    for (i, (key, days, slots)) in s.routines.iter().enumerate() {
+        let days = match (schedule, &moved) {
+            (Schedule::Rotation, _) => Weekdays::NONE,
+            (Schedule::Weekly, Some(moved)) => moved[i],
+            (Schedule::Weekly, None) => days.iter().fold(Weekdays::NONE, |w, d| w.with(*d)),
         };
         let routine_id = insert_routine(&mut tx, program_id, routine_name(key, lang), days).await?;
         for (ex, sets, min, max, rest) in *slots {
@@ -277,6 +312,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn weekly_starters_move_onto_chosen_days_in_order() {
+        let ppl = find("ppl").unwrap();
+        // Tuesday, Thursday, Saturday: push, pull, legs.
+        let days = Weekdays::NONE.with(1).with(3).with(5);
+        let moved = moved_to(ppl, days).unwrap();
+        assert_eq!(
+            moved,
+            vec![
+                Weekdays::NONE.with(1),
+                Weekdays::NONE.with(3),
+                Weekdays::NONE.with(5)
+            ]
+        );
+        // Upper / Lower has two sessions of each routine.
+        let ul = find("upper_lower").unwrap();
+        let moved = moved_to(ul, Weekdays::NONE.with(0).with(1).with(3).with(4)).unwrap();
+        assert_eq!(moved.iter().map(|w| w.count()).sum::<usize>(), 4);
+        // A different number of days, or a rotation, cannot be moved.
+        assert_eq!(moved_to(ppl, Weekdays::NONE.with(0).with(2)), None);
+        assert_eq!(moved_to(find("5x5").unwrap(), days), None);
+    }
+
+    #[test]
     fn starters_use_listed_exercises_and_valid_plans() {
         for s in STARTERS {
             assert!(s.days_per_week() >= 3, "{}", s.key);
@@ -297,7 +355,7 @@ mod tests {
     async fn a_starter_creates_an_active_program_with_its_routines() {
         let db = crate::db::connect_memory().await.unwrap();
         let ppl = find("ppl").unwrap();
-        let id = create(&db, ppl, ppl.name(Lang::Fr), Lang::Fr)
+        let id = create(&db, ppl, ppl.name(Lang::Fr), Lang::Fr, None)
             .await
             .unwrap();
         let p = super::super::program(&db, id).await.unwrap().unwrap();
@@ -311,7 +369,7 @@ mod tests {
 
         // A second program is not made active.
         let five = find("5x5").unwrap();
-        let id2 = create(&db, five, "5×5", Lang::En).await.unwrap();
+        let id2 = create(&db, five, "5×5", Lang::En, None).await.unwrap();
         let p2 = super::super::program(&db, id2).await.unwrap().unwrap();
         assert!(!p2.active);
         assert_eq!(p2.schedule(), Schedule::Rotation);

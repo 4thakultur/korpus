@@ -444,7 +444,18 @@ async fn activity_page(
             edit_url: format!("/activity/{}/edit?date={date}", a.id),
         })
         .collect();
-    let form = typed.activity.unwrap_or_else(|| ActivityForm::blank(date));
+    let form = match typed.activity {
+        Some(f) => f,
+        None => {
+            let mut f = ActivityForm::blank(date);
+            // Offer the sport given at setup first, with its usual length.
+            if let Some((sport, minutes)) = crate::habits::usual_sport(&state.db).await? {
+                f.sport_key = sport.key.into();
+                f.duration = minutes.to_string();
+            }
+            f
+        }
+    };
     Ok(ActivityPage {
         lang,
         title: day_title(date, today, lang),

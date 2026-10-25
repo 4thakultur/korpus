@@ -433,7 +433,7 @@ pub async fn create_program(
     check_program_room(&state, lang).await?;
     if !form.starter.is_empty() {
         let s = starter::find(&form.starter).ok_or(AppError::NotFound)?;
-        let id = starter::create(&state.db, s, s.name(lang), lang).await?;
+        let id = starter::create(&state.db, s, s.name(lang), lang, None).await?;
         return Ok(see_other(&format!(
             "/gym/programs/{id}?msg=program_created"
         )));

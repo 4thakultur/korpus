@@ -336,6 +336,260 @@ async fn first_run_goes_through_setup() {
 }
 
 #[tokio::test]
+async fn setup_asks_about_usual_activity() {
+    let a = app().await;
+    let page = a.get("/setup").await.body;
+    assert!(page.contains("How many steps do you take on a usual day?"));
+    assert!(page.contains(r#"name="sport_key" value="running""#));
+    assert!(page.contains(r#"<option value="climbing""#));
+
+    // A sport without its details is sent back, with nothing saved.
+    let bad = a
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&usual_steps=10k_15k&plays_sport=yes&sport_key=running",
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(bad.body.contains("Choose at least one day of the week."));
+    assert!(bad.body.contains(r#"value="10k_15k" checked"#));
+    assert_eq!(a.get("/").await.location.as_deref(), Some("/setup"));
+
+    let r = a
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&usual_steps=10k_15k&plays_sport=yes&sport_key=other\
+             &other_sport=climbing&sport_day1=on&sport_day4=on&sport_minutes=90",
+        )
+        .await;
+    assert_eq!(r.location.as_deref(), Some("/goals?setup=1"));
+    // 10,000–15,000 steps (about 22 MET-hours a week above rest) and
+    // 2 × 1.5 h of climbing (7.5 METs, 19.5 MET-hours) make about two levels.
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.activity.as_deref(), Some("moderate"));
+    let goals = a.get("/goals?setup=1").await.body;
+    assert!(goals.contains("From your answers, the activity level is set to"));
+    assert!(!a.get("/goals").await.body.contains("From your answers"));
+
+    // The sport is offered first when adding an activity.
+    let day = a.get("/activity").await.body;
+    assert!(day.contains(r#"<option value="climbing" data-icon="mountain" selected>"#));
+    assert!(day.contains(r#"name="duration" value="90""#));
+}
+
+#[tokio::test]
+async fn setup_switches_language_without_saving() {
+    let a = app().await;
+    let page = a
+        .get("/setup?language=fr&country=FR&timezone=Europe%2FParis&unit_system=imperial&usual_steps=over_15k")
+        .await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("Bienvenue"), "{}", page.body);
+    assert!(page.body.contains(r#"value="fr" lang="fr" selected"#));
+    assert!(page.body.contains(r#"value="Europe/Paris""#));
+    assert!(page.body.contains(r#"value="imperial" checked"#));
+    assert!(page.body.contains(r#"value="over_15k" checked"#));
+    let p = korpus::profile::load(&a.db).await.unwrap();
+    assert!(!p.setup_complete);
+    assert_eq!(p.language, None);
+    assert_eq!(p.usual_steps, None);
+    // An unknown language falls back to the browser's.
+    let page = a.get("/setup?language=xx").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert!(page.body.contains("Welcome to Korpus"));
+}
+
+#[tokio::test]
+async fn setup_asks_about_the_gym_apart_from_sports() {
+    let a = app().await;
+    let page = a.get("/setup").await.body;
+    assert!(page.contains("Do you train at the gym?"));
+    assert!(page.contains(r#"name="gym_program" value="ppl""#));
+    assert!(page.contains(r#"name="gym_program" value="none""#));
+    assert!(!page.contains("traditional_strength_training"));
+
+    let r = a
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&gym=yes&gym_day1=on&gym_day3=on&gym_day5=on\
+             &gym_minutes=90&gym_program=ppl&plays_sport=no",
+        )
+        .await;
+    assert_eq!(r.location.as_deref(), Some("/goals?setup=1"));
+    let p = korpus::profile::load(&a.db).await.unwrap();
+    assert_eq!(
+        (p.goes_to_gym, p.gym_sessions, p.gym_minutes),
+        (Some(true), Some(3), Some(90))
+    );
+    // 3 × 1.5 h at 3.5 METs: 11.25 MET-hours, about one level.
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.activity.as_deref(), Some("light"));
+
+    // The gym repeats on Tuesday, Thursday and Saturday from today.
+    let (sport_key, weekdays, minutes, start): (String, i64, i64, String) =
+        sqlx::query_as("SELECT sport_key, weekdays, duration_min, start_date FROM activities")
+            .fetch_one(&a.db)
+            .await
+            .unwrap();
+    assert_eq!(
+        (sport_key.as_str(), weekdays, minutes),
+        ("traditional_strength_training", 0b10_1010, 90)
+    );
+    let start: jiff::civil::Date = start.parse().unwrap();
+    let tuesday = (0..7)
+        .map(|i| start + jiff::Span::new().days(i))
+        .find(|d| d.weekday() == jiff::civil::Weekday::Tuesday)
+        .unwrap();
+    // So its energy is added to that day's total.
+    a.post("/weight", &format!("date={start}&weight=80")).await;
+    let energy = korpus::activity::sport_energy_on(&a.db, tuesday)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(energy.minutes, 90);
+    assert!(energy.kcal > 0.0);
+    let monday = tuesday - jiff::Span::new().days(1);
+    let off = korpus::activity::sport_energy_on(&a.db, monday)
+        .await
+        .unwrap();
+    assert!(monday < start || off.is_none());
+
+    // The template is now the active program, on the same days.
+    let active = korpus::gym::active_program(&a.db).await.unwrap().unwrap();
+    assert_eq!(active.name, "Push / Pull / Legs");
+    let days: Vec<i64> = korpus::gym::routines(&a.db, active.id)
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| r.routine.weekdays)
+        .collect();
+    assert_eq!(days, [0b10, 0b1000, 0b10_0000]);
+
+    // Skipping the program leaves the Gym empty.
+    let b = app().await;
+    let r = b
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&gym=yes&gym_day0=on&gym_day3=on&gym_minutes=60\
+             &gym_program=none",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    assert_eq!(korpus::gym::program_count(&b.db).await.unwrap(), 0);
+
+    // The gym is not accepted as the sport.
+    let bad = b
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&plays_sport=yes&sport_key=other\
+             &other_sport=traditional_strength_training&sport_day0=on&sport_minutes=60",
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn usual_activity_never_replaces_a_chosen_level() {
+    let a = app().await;
+    sqlx::query("UPDATE goal_settings SET activity = 'sedentary'")
+        .execute(&a.db)
+        .await
+        .unwrap();
+    let r = a
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&usual_steps=over_15k&plays_sport=no",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.activity.as_deref(), Some("sedentary"));
+    assert!(
+        !a.get("/goals?setup=1")
+            .await
+            .body
+            .contains("From your answers")
+    );
+
+    // Skipping every question suggests nothing.
+    let b = app().await;
+    b.setup().await;
+    assert_eq!(korpus::goals::load(&b.db).await.unwrap().activity, None);
+}
+
+#[tokio::test]
+async fn reset_profile_erases_data_but_keeps_the_login() {
+    let a = app().await;
+    let r = a
+        .post(
+            "/setup",
+            "unit_system=imperial&timezone=Europe%2FBerlin&language=fr&usual_steps=over_15k&plays_sport=no",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    let food = a.create_oats().await;
+    a.post(
+        "/diary/entries",
+        &format!("food_id={food}&date=2026-05-01&meal=lunch&amount=80"),
+    )
+    .await;
+    a.post("/weight", "date=2026-05-01&weight=160").await;
+    a.post("/goals", "target_mode=custom&custom_target=2100")
+        .await;
+    a.post("/activity/steps", "date=2026-05-01&steps=9000")
+        .await;
+    a.post(
+        "/activity",
+        "sport_key=cycling&duration=40&start=2026-05-01&repeat=on&day4=on",
+    )
+    .await;
+    let settings = a.get("/settings").await.body;
+    assert!(settings.contains(r#"action="/settings/reset""#));
+    let accounts_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM account")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+
+    let r = a.post("/settings/reset", "").await;
+    assert_eq!(r.location.as_deref(), Some("/setup"));
+
+    for table in [
+        "foods",
+        "diary_entries",
+        "weight_entries",
+        "daily_steps",
+        "activities",
+        "gym_programs",
+    ] {
+        let n: i64 =
+            sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
+                .fetch_one(&a.db)
+                .await
+                .unwrap();
+        assert_eq!(n, 0, "{table}");
+    }
+    let p = korpus::profile::load(&a.db).await.unwrap();
+    assert!(!p.setup_complete);
+    assert_eq!(
+        (p.unit_system.as_str(), p.language, p.usual_steps),
+        ("metric", None, None)
+    );
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!((g.daily_kcal_target, g.activity), (None, None));
+
+    // Still logged in, with the same login, and sent through setup again.
+    let accounts_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM account")
+        .fetch_one(&a.db)
+        .await
+        .unwrap();
+    assert_eq!(accounts_after, accounts_before);
+    assert_eq!(a.get("/diary").await.location.as_deref(), Some("/setup"));
+    assert_eq!(a.get("/setup").await.status, StatusCode::OK);
+    a.setup().await;
+    assert_eq!(a.get("/diary").await.status, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn security_headers_present() {
     let a = app().await;
     let res = a
@@ -1037,6 +1291,13 @@ async fn goals_estimate_custom_and_safety() {
     let a = app().await;
     a.setup().await;
 
+    // Until a choice is saved, the target and macronutrient goals come
+    // from the estimate.
+    let page = a.get("/goals?setup=1").await.body;
+    assert!(page.contains(r#"name="target_mode" value="estimate" checked"#));
+    assert!(page.contains(r#"name="macro_mode" value="estimate" checked"#));
+    assert!(!page.contains(r#"value="none" checked"#));
+
     let r = a
         .post(
             "/goals",
@@ -1057,8 +1318,19 @@ async fn goals_estimate_custom_and_safety() {
         before
     );
 
+    // Without the details, the estimate is kept as the choice and the rest
+    // of the form is saved, with no target until they are filled in.
     let missing = a.post("/goals", "target_mode=estimate&goal=lose").await;
-    assert_eq!(missing.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(missing.status, StatusCode::SEE_OTHER, "{}", missing.body);
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.target_source.as_deref(), Some("estimate"));
+    assert_eq!((g.daily_kcal_target, g.goal.as_str()), (None, "lose"));
+    assert!(
+        a.get("/goals")
+            .await
+            .body
+            .contains("To estimate a target, fill in sex")
+    );
 
     let minor = a
         .post(
@@ -1085,6 +1357,14 @@ async fn goals_estimate_custom_and_safety() {
     let g = korpus::goals::load(&a.db).await.unwrap();
     assert_eq!(g.daily_kcal_target, None);
     assert_eq!(g.protein_goal_g, Some(120.0));
+    // "No target" stays chosen.
+    assert_eq!(g.target_source.as_deref(), Some("none"));
+    assert!(
+        a.get("/goals")
+            .await
+            .body
+            .contains(r#"name="target_mode" value="none" checked"#)
+    );
 }
 
 #[tokio::test]
@@ -1132,14 +1412,21 @@ async fn macro_goals_are_estimated_and_follow_the_days_activity() {
             "target_mode=custom&custom_target=2000&macro_mode=estimate",
         )
         .await;
-    assert_eq!(no_weight.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(no_weight.body.contains("enter your weight"));
+    // Estimating stays chosen and the rest is saved, with no goals until
+    // the weight and target are known.
+    assert_eq!(no_weight.status, StatusCode::SEE_OTHER);
+    let g = korpus::goals::load(&a.db).await.unwrap();
+    assert_eq!(g.macro_source.as_deref(), Some("estimate"));
+    assert_eq!((g.protein_goal_g, g.carbs_goal_g), (None, None));
+    assert_eq!(g.daily_kcal_target, Some(2000.0));
 
     let no_target = a
         .post("/goals", "target_mode=none&weight=75&macro_mode=estimate")
         .await;
-    assert_eq!(no_target.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(no_target.body.contains("set a daily calorie target"));
+    assert_eq!(no_target.status, StatusCode::SEE_OTHER);
+    let page = a.get("/goals").await.body;
+    assert!(page.contains(r#"name="macro_mode" value="estimate" checked"#));
+    assert!(page.contains("set a daily calorie target"));
 
     let minor = a
         .post(
@@ -1266,7 +1553,15 @@ async fn provider_outage_degrades_gracefully() {
 #[tokio::test]
 async fn export_import_round_trip_and_backup() {
     let a = app().await;
-    a.setup().await;
+    let r = a
+        .post(
+            "/setup",
+            "unit_system=metric&timezone=UTC&usual_steps=5k_10k&plays_sport=yes&sport_key=yoga\
+             &sport_day0=on&sport_day2=on&sport_day4=on&sport_minutes=60&gym=yes&gym_day1=on\
+             &gym_day3=on&gym_minutes=45",
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
     let food = a.create_oats().await;
     a.post(
         "/diary/entries",
@@ -1307,7 +1602,8 @@ async fn export_import_round_trip_and_backup() {
     assert_eq!(summary.foods, 1);
     assert_eq!(summary.diary_entries, 1);
     assert_eq!(summary.weight_entries, 1);
-    assert_eq!(summary.activities, 1);
+    // Cycling, and the yoga and gym that setup made repeat from today.
+    assert_eq!(summary.activities, 3);
     assert_eq!(b.day_kcal("2026-05-01").await, "296");
     let day = b.get("/activity?date=2026-05-01").await.body;
     assert!(day.contains("<strong>9,000</strong>") && day.contains(r#"row-title">Cycling<"#));
@@ -1318,6 +1614,16 @@ async fn export_import_round_trip_and_backup() {
             .contains(r#"row-title">Cycling<"#)
     );
     assert!(day.contains("of 12,000 steps"));
+    let p = korpus::profile::load(&b.db).await.unwrap();
+    assert_eq!(
+        (
+            p.usual_steps.as_deref(),
+            p.sport_key.as_deref(),
+            p.sport_sessions
+        ),
+        (Some("5k_10k"), Some("yoga"), Some(3))
+    );
+    assert_eq!((p.goes_to_gym, p.gym_minutes), (Some(true), Some(45)));
     assert_eq!(
         korpus::goals::load(&b.db).await.unwrap().daily_kcal_target,
         Some(2100.0)
@@ -1407,6 +1713,19 @@ async fn invalid_import_is_rejected_atomically() {
         .await
         .unwrap_err();
     assert!(err.to_string().contains("steps for 2026-05-01"), "{err}");
+    let mut export = korpus::backup::export(&a.db).await.unwrap();
+    export.profile.plays_sport = Some(false);
+    export.profile.sport_minutes = Some(45);
+    let err = korpus::backup::import(&b.db, &export, Lang::En)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("usual activity"), "{err}");
+    let mut export = korpus::backup::export(&a.db).await.unwrap();
+    export.profile.gym_minutes = Some(31);
+    let err = korpus::backup::import(&b.db, &export, Lang::En)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("usual activity"), "{err}");
     let mut export = korpus::backup::export(&a.db).await.unwrap();
     export.foods[0].notes = Some("x".repeat(10_000));
     assert!(

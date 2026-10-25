@@ -1,13 +1,140 @@
 {% extends "base.html" %}
 {% block content %}
-<header class="welcome">
-  <span class="app-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2.2 1.2-3.5 3.8-3.5 7v3H17"/></svg></span>
-  <h1>{{ lang.t("Welcome to Korpus") }}</h1>
-  <p>{{ lang.t("Korpus is a private food diary that runs on your own server. A few quick settings, then you can start logging.") }}</p>
-</header>
-{% include "_errors.html" %}
-<form method="post" action="/setup">
-  {% include "_profile_fields.html" %}
-  <button type="submit" class="primary block">{{ lang.t("Continue") }}</button>
+{# One question per card. app.js shows them one at a time with a progress
+   bar; without it, all questions are on one page. #}
+<form method="post" action="/setup" class="onboarding" data-onboarding>
+  <div class="onboarding-bar js-only">
+    <button type="button" class="icon-button" data-onboarding-back aria-label="{{ lang.t("Previous question") }}">{% include "_back.html" %}</button>
+    <div class="onboarding-progress" role="progressbar" aria-label="{{ lang.t("Setup progress") }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-of="{{ lang.f2("Question {0} of {1}", "{0}", "{1}") }}"><span></span></div>
+  </div>
+  {% include "_errors.html" %}
+
+  <section class="onboarding-step" data-step aria-labelledby="step-welcome">
+    <header class="welcome">
+      <span class="app-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M7 3v8a2 2 0 0 0 4 0V3M9 11v10M17 21V3c-2.2 1.2-3.5 3.8-3.5 7v3H17"/></svg></span>
+      <h1 id="step-welcome" tabindex="-1">{{ lang.t("Welcome to Korpus") }}</h1>
+      <p>{{ lang.t("Korpus is a private food diary that runs on your own server. A few quick settings, then you can start logging.") }}</p>
+    </header>
+    {% include "_profile_fields.html" %}
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step aria-labelledby="q-steps">
+    <fieldset class="question" id="usual_steps" aria-describedby="q-steps-lead">
+      <legend><h2 id="q-steps" tabindex="-1">{{ lang.t("How many steps do you take on a usual day?") }}</h2></legend>
+      <p class="question-lead" id="q-steps-lead">{{ lang.t("Used to suggest an activity level for the calorie estimate in Goals. A rough guess is fine; your phone or watch may show a daily average.") }}</p>
+      <div class="option-cards">
+        {% for c in step_choices %}<label class="option-card"><input type="radio" name="usual_steps" value="{{ c.value }}"{% if habits.usual_steps == c.value %} checked{% endif %}><span class="option-text"><span class="option-label">{{ c.label }}</span>{% if !c.detail.is_empty() %}<span class="option-detail">{{ c.detail }}</span>{% endif %}</span>{% include "_check.html" %}</label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("usual_steps") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step aria-labelledby="q-gym">
+    <fieldset class="question" id="gym" aria-describedby="q-gym-lead">
+      <legend><h2 id="q-gym" tabindex="-1">{{ lang.t("Do you train at the gym?") }}</h2></legend>
+      <p class="question-lead" id="q-gym-lead">{{ lang.t("Weight training with machines or free weights, at a gym or at home.") }}</p>
+      <div class="option-cards">
+        <label class="option-card"><input type="radio" name="gym" value="yes"{% if habits.gym == "yes" %} checked{% endif %}><span class="option-text"><span class="option-label">{{ lang.t("Yes") }}</span><span class="option-detail">{{ lang.t("At least once a week") }}</span></span>{% include "_check.html" %}</label>
+        <label class="option-card"><input type="radio" name="gym" value="no"{% if habits.gym == "no" %} checked{% endif %}><span class="option-text"><span class="option-label">{{ lang.t("No") }}</span><span class="option-detail">{{ lang.t("Not at the moment") }}</span></span>{% include "_check.html" %}</label>
+      </div>
+      {% if let Some(e) = errors.get("gym") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step data-if="gym" aria-labelledby="q-gym-days">
+    <fieldset class="question" id="gym_days" aria-describedby="q-gym-days-lead">
+      <legend><h2 id="q-gym-days" tabindex="-1">{{ lang.t("On which days do you go to the gym?") }}</h2></legend>
+      <p class="question-lead" id="q-gym-days-lead">{{ lang.t("Korpus adds these sessions to Activity every week, so the energy they use counts in each day's total. You can change or skip a day there.") }}</p>
+      <div class="option-cards">
+        {% for c in day_choices %}<label class="option-card"><input type="checkbox" name="gym_day{{ c.value }}" value="on"{% if habits.has_day("gym", c.value) %} checked{% endif %}><span class="option-text"><span class="option-label">{{ c.label }}</span></span>{% include "_check.html" %}</label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("gym_days") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step data-if="gym" aria-labelledby="q-gym-long">
+    <fieldset class="question" id="gym_minutes">
+      <legend><h2 id="q-gym-long" tabindex="-1">{{ lang.t("How long is a usual gym session?") }}</h2></legend>
+      <div class="option-cards">
+        {% for c in minute_choices %}<label class="option-card"><input type="radio" name="gym_minutes" value="{{ c.value }}"{% if habits.gym_minutes == c.value %} checked{% endif %}><span class="option-text"><span class="option-label">{{ c.label }}</span></span>{% include "_check.html" %}</label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("gym_minutes") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step data-if="gym" aria-labelledby="q-gym-program">
+    <fieldset class="question" id="gym_program" aria-describedby="q-gym-program-lead">
+      <legend><h2 id="q-gym-program" tabindex="-1">{{ lang.t("Start with a gym program?") }}</h2></legend>
+      <p class="question-lead" id="q-gym-program-lead">{{ lang.t("A template becomes an ordinary program: rename it, change its days and exercises, and set your own weights.") }}</p>
+      <div class="option-cards">
+        {% for c in program_choices %}<label class="option-card"><input type="radio" name="gym_program" value="{{ c.value }}"{% if habits.gym_program == c.value %} checked{% endif %}><span class="option-text"><span class="option-label">{{ c.label }}</span>{% if !c.detail.is_empty() %}<span class="option-detail">{{ c.detail }}</span>{% endif %}</span>{% include "_check.html" %}</label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("gym_program") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step aria-labelledby="q-sport">
+    <fieldset class="question" id="plays_sport" aria-describedby="q-sport-lead">
+      <legend><h2 id="q-sport" tabindex="-1">{{ lang.t("Do you play a sport?") }}</h2></legend>
+      <p class="question-lead" id="q-sport-lead">{{ lang.t("Apart from the gym. Think of a usual week, not an exceptional one.") }}</p>
+      <div class="option-cards">
+        <label class="option-card"><input type="radio" name="plays_sport" value="yes"{% if habits.plays_sport == "yes" %} checked{% endif %}><span class="option-text"><span class="option-label">{{ lang.t("Yes") }}</span><span class="option-detail">{{ lang.t("At least once a week") }}</span></span>{% include "_check.html" %}</label>
+        <label class="option-card"><input type="radio" name="plays_sport" value="no"{% if habits.plays_sport == "no" %} checked{% endif %}><span class="option-text"><span class="option-label">{{ lang.t("No") }}</span><span class="option-detail">{{ lang.t("Not at the moment") }}</span></span>{% include "_check.html" %}</label>
+      </div>
+      {% if let Some(e) = errors.get("plays_sport") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step data-if="plays_sport" aria-labelledby="q-which">
+    <fieldset class="question" id="sport_key">
+      <legend><h2 id="q-which" tabindex="-1">{{ lang.t("Which sport?") }}</h2></legend>
+      <p class="question-lead">{{ lang.t("If you play several, choose the one you do most.") }}</p>
+      <div class="option-cards grid">
+        {% for c in sport_choices %}<label class="option-card tile"><input type="radio" name="sport_key" value="{{ c.value }}"{% if habits.sport_key == c.value %} checked{% endif %}{% if c.value == "other" %} data-other-toggle{% endif %}><svg class="sport-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><use href="/static/sports.svg?v={{ crate::web::ASSET_VERSION }}#{{ c.icon }}"/></svg><span class="option-label">{{ c.label }}</span></label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("sport_key") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <div class="group" data-other-only>
+      <div class="form-row">
+        <label for="other_sport">{{ lang.t("Another sport") }}</label>
+        <div class="control"><select id="other_sport" name="other_sport">
+          {% for o in other_sports %}<option value="{{ o.value }}"{% if !o.icon.is_empty() %} data-icon="{{ o.icon }}"{% endif %}{% if o.selected %} selected{% endif %}>{{ o.label }}</option>{% endfor %}
+        </select></div>
+      </div>
+    </div>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step data-if="plays_sport" aria-labelledby="q-sport-days">
+    <fieldset class="question" id="sport_days" aria-describedby="q-sport-days-lead">
+      <legend><h2 id="q-sport-days" tabindex="-1">{{ lang.t("On which days?") }}</h2></legend>
+      <p class="question-lead" id="q-sport-days-lead">{{ lang.t("Korpus adds these sessions to Activity every week, so the energy they use counts in each day's total. You can change or skip a day there.") }}</p>
+      <div class="option-cards">
+        {% for c in day_choices %}<label class="option-card"><input type="checkbox" name="sport_day{{ c.value }}" value="on"{% if habits.has_day("sport", c.value) %} checked{% endif %}><span class="option-text"><span class="option-label">{{ c.label }}</span></span>{% include "_check.html" %}</label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("sport_days") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <section class="onboarding-step" data-step data-if="plays_sport" aria-labelledby="q-long">
+    <fieldset class="question" id="sport_minutes">
+      <legend><h2 id="q-long" tabindex="-1">{{ lang.t("How long is a usual session?") }}</h2></legend>
+      <div class="option-cards">
+        {% for c in minute_choices %}<label class="option-card"><input type="radio" name="sport_minutes" value="{{ c.value }}"{% if habits.sport_minutes == c.value %} checked{% endif %}><span class="option-text"><span class="option-label">{{ c.label }}</span></span>{% include "_check.html" %}</label>{% endfor %}
+      </div>
+      {% if let Some(e) = errors.get("sport_minutes") %}<p class="field-error">{{ e }}</p>{% endif %}
+    </fieldset>
+    <button type="button" class="primary block js-only" data-next>{{ lang.t("Continue") }}</button>
+  </section>
+
+  <button type="submit" class="primary block js-hidden">{{ lang.t("Continue") }}</button>
 </form>
 {% endblock %}

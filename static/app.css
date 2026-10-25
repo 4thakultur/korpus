@@ -1010,6 +1010,62 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .app-icon svg { width: 44px; height: 44px; }
 .welcome p { color: var(--label-2); max-width: 30rem; margin: 0 auto; }
 
+/* Setup questions: one card per screen (app.js), answers as large cards. */
+.onboarding-bar { align-items: center; gap: 8px; margin: 0 -8px 8px; }
+.onboarding-bar .icon-button { color: var(--tint); }
+.onboarding-bar .icon-button[hidden] { display: inline-grid; visibility: hidden; }
+.onboarding-progress {
+  flex: 1; height: 6px; margin-right: 52px; border-radius: 999px;
+  background: var(--fill-strong); overflow: hidden;
+}
+.onboarding-progress span {
+  display: block; height: 100%; background: var(--tint); border-radius: inherit;
+  transform-origin: left center; transform: scaleX(var(--progress, 0)); transition: transform 0.3s ease;
+}
+.js .onboarding-step:not([hidden]) { animation: step-in 0.25s ease; }
+@keyframes step-in { from { opacity: 0; transform: translateX(24px); } }
+.onboarding-step + .onboarding-step { margin-top: 32px; }
+.js .onboarding-step + .onboarding-step { margin-top: 0; }
+.question { border: 0; margin: 0; padding: 0; min-width: 0; }
+.question legend {
+  padding: 0; margin: 0; color: var(--label);
+  font: inherit; text-transform: none; letter-spacing: normal;
+}
+.question h2 { font-size: 1.75rem; line-height: 1.2; margin: 8px 0 8px; }
+.question h2:focus { outline: none; }
+.question-lead { color: var(--label-2); margin: 0 0 20px; }
+.option-cards { display: grid; gap: 10px; margin-bottom: 24px; }
+.option-cards.grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.option-cards.numbers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (min-width: 560px) {
+  .option-cards.grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.option-card {
+  position: relative; display: flex; align-items: center; gap: 12px;
+  min-height: 64px; padding: 14px 16px; cursor: pointer;
+  background: var(--card); border-radius: var(--radius-md);
+  box-shadow: var(--shadow), inset 0 0 0 2px transparent;
+  transition: box-shadow 0.15s ease, background-color 0.15s ease, transform 0.1s ease;
+}
+.option-card:active { transform: scale(0.98); }
+.option-card input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.option-card:has(input:checked) { background: var(--tint-fill); box-shadow: inset 0 0 0 2px var(--tint); }
+.option-card:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.option-card .check { margin-left: auto; flex: none; width: 20px; height: 20px; color: var(--tint); visibility: hidden; }
+.option-card input:checked ~ .check { visibility: visible; }
+.option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.option-label { font-size: 1.0625rem; font-weight: 600; overflow-wrap: anywhere; }
+.option-detail { font-size: 0.875rem; color: var(--label-2); }
+.option-card.tile {
+  flex-direction: column; justify-content: center; gap: 8px;
+  min-height: 104px; padding: 14px 8px; text-align: center;
+}
+.option-card.tile .sport-icon { width: 32px; height: 32px; color: var(--activity-text); }
+.option-card.tile .option-label { font-size: 0.9375rem; hyphens: auto; }
+.option-card.tile:has(input:checked) .option-label { color: var(--tint); }
+.numbers .option-card.tile { min-height: 64px; }
+.onboarding .group[data-other-only] { margin-top: -8px; }
+
 /* Login and account pages. */
 .form-error { margin: 0 4px 12px; }
 
@@ -1071,7 +1127,7 @@ tr.missing td { color: var(--warn-text); font-style: italic; }
 .group-foot code, .login-help code { white-space: nowrap; }
 .welcome + .error-summary, .welcome + .form-error { margin-top: -8px; }
 .login-help { text-align: center; margin-top: 20px; }
-.logout { margin-top: 16px; }
+.logout, .reset-profile { margin-top: 16px; }
 .steps { margin: 0 0 20px; padding-left: 1.4em; }
 .steps > li { margin: 0 0 12px; }
 /* The QR code keeps black on white in dark mode: scanners need it. */
@@ -1209,6 +1265,8 @@ button.starter-row.add-row { color: var(--tint); }
   .set-done:checked { forced-color-adjust: none; background: Highlight; border-color: Highlight; }
   .set-done:checked::after { border-color: HighlightText; }
   .menu { border: 1px solid CanvasText; }
+  .option-card { border: 1px solid CanvasText; }
+  .option-card:has(input:checked) { outline: 3px solid Highlight; }
   .menu .active { outline: 2px solid Highlight; outline-offset: -2px; }
 }
 @media print {

@@ -1,4 +1,4 @@
-//! Export, import and consistent SQLite backups.
+//! Export, import, consistent SQLite backups and resetting the profile.
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -12,6 +12,7 @@ use crate::goals::{Activity, Goal, GoalSettings, MIN_CUSTOM_KCAL, Sex};
 use crate::gym::exercises::{Equipment, Muscle};
 use crate::gym::workouts::{Workout, WorkoutExercise, WorkoutSet};
 use crate::gym::{self, CustomExercise, Program, Routine, RoutineExercise, Schedule};
+use crate::habits::Habits;
 use crate::i18n::Lang;
 use crate::nutrition::{Basis, Nutrient, check_value};
 use crate::profile::Profile;
@@ -346,7 +347,7 @@ fn valid_goals(g: &GoalSettings) -> bool {
             .into_iter()
             .all(|v| in_range(v, 0.0, 1000.0))
         && known(g.target_source.as_deref(), |s| {
-            matches!(s, "estimate" | "custom")
+            matches!(s, "estimate" | "custom" | "none")
         })
         && known(g.macro_source.as_deref(), |s| {
             matches!(s, "estimate" | "custom")
@@ -439,6 +440,9 @@ fn validate(export: &Export, lang: Lang) -> AppResult<()> {
     }
     if !(activity::MIN_STEP_GOAL..=activity::MAX_STEPS).contains(&export.profile.step_goal) {
         return Err(invalid(lang, lang.t("step goal")));
+    }
+    if !Habits::from_profile(&export.profile).matches_profile(&export.profile) {
+        return Err(invalid(lang, lang.t("usual activity")));
     }
     for s in &export.daily_steps {
         let ctx = || lang.f("steps for {0}", &[&s.step_date]);
@@ -678,7 +682,9 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     let p = &export.profile;
     sqlx::query(
         "UPDATE profile SET setup_complete = 1, unit_system = ?, timezone = ?, language = ?,
-             country = ?, step_goal = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+             country = ?, step_goal = ?, usual_steps = ?, plays_sport = ?, sport_key = ?,
+             sport_sessions = ?, sport_minutes = ?, goes_to_gym = ?, gym_sessions = ?,
+             gym_minutes = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
          WHERE id = 1",
     )
     .bind(&p.unit_system)
@@ -686,6 +692,14 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     .bind(p.lang().map(Lang::code))
     .bind(p.country())
     .bind(p.step_goal)
+    .bind(&p.usual_steps)
+    .bind(p.plays_sport)
+    .bind(&p.sport_key)
+    .bind(p.sport_sessions)
+    .bind(p.sport_minutes)
+    .bind(p.goes_to_gym)
+    .bind(p.gym_sessions)
+    .bind(p.gym_minutes)
     .execute(&mut *tx)
     .await?;
 
@@ -997,9 +1011,84 @@ pub async fn import(db: &SqlitePool, export: &Export, lang: Lang) -> AppResult<I
     })
 }
 
+/// Tables of personal data, children before the tables they reference.
+/// Food composition tables, the login and its sessions are kept.
+const PERSONAL_TABLES: [&str; 14] = [
+    "gym_workout_sets",
+    "gym_workout_exercises",
+    "gym_workouts",
+    "gym_routine_exercises",
+    "gym_routines",
+    "gym_programs",
+    "gym_exercises",
+    "activity_skips",
+    "activities",
+    "daily_steps",
+    "weight_entries",
+    "diary_entries",
+    "food_names",
+    "foods",
+];
+
+/// Erases everything the user recorded: foods, diary, weights, activity,
+/// gym, goals and the profile, which returns to its defaults so the next
+/// visit goes through first-run setup again. The login (username, password
+/// and two-factor authentication) and food composition tables are kept.
+/// Everything happens in one transaction.
+pub async fn reset_profile(db: &SqlitePool) -> AppResult<()> {
+    let mut tx = db.begin().await?;
+    for table in PERSONAL_TABLES {
+        sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
+            .execute(&mut *tx)
+            .await?;
+    }
+    // Recreating the single rows restores every column's default.
+    for table in ["goal_settings", "profile"] {
+        sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table}")))
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "INSERT INTO {table} (id) VALUES (1)"
+        )))
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A new table must be either erased by [`reset_profile`] or kept on
+    /// purpose, so resetting never leaves personal data behind.
+    #[tokio::test]
+    async fn reset_covers_every_table() {
+        const KEPT: [&str; 7] = [
+            "account",
+            "sessions",
+            "datasets",
+            "dataset_foods",
+            "bundled_datasets",
+            "profile",
+            "goal_settings",
+        ];
+        let db = crate::db::connect_memory().await.unwrap();
+        let tables: Vec<String> = sqlx::query_scalar(
+            "SELECT name FROM sqlite_master WHERE type = 'table'
+               AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_sqlx_%'",
+        )
+        .fetch_all(&db)
+        .await
+        .unwrap();
+        let unhandled: Vec<&String> = tables
+            .iter()
+            .filter(|t| !PERSONAL_TABLES.contains(&t.as_str()) && !KEPT.contains(&t.as_str()))
+            .collect();
+        assert!(unhandled.is_empty(), "not handled by reset: {unhandled:?}");
+        reset_profile(&db).await.unwrap();
+    }
 
     #[tokio::test]
     async fn snapshots_leave_out_sessions() {

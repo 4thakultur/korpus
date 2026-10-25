@@ -18,6 +18,7 @@ use crate::goals::{
     GoalSettings, MacroEstimate, MacroInput, Sex, age_on, check_custom_target, estimate,
     estimate_macros,
 };
+use crate::habits::{self, Habits};
 use crate::i18n::Lang;
 use crate::nutrition::{Nutrient, fmt_g_whole, fmt_kcal};
 use crate::units::{UnitSystem, parse_date, parse_decimal, today_in};
@@ -80,6 +81,8 @@ pub struct GoalsPage {
     pub current_source: &'static str,
     pub estimate: Option<EstimateView>,
     pub macro_plan: Option<MacroPlanView>,
+    /// Why the estimated macronutrient goals are missing, if they are.
+    pub macro_note: Option<&'static str>,
     pub minor: bool,
     pub caution: Option<&'static str>,
     pub weight_unit: &'static str,
@@ -87,6 +90,9 @@ pub struct GoalsPage {
     pub activities: Vec<Choice>,
     pub goals: Vec<Choice>,
     pub setup: bool,
+    /// At setup: the activity level suggested from the usual activity
+    /// answered just before, when it is the one in the form.
+    pub suggested_activity: Option<&'static str>,
 }
 
 impl GoalsPage {
@@ -117,7 +123,8 @@ fn fmt_input(v: Option<f64>, decimals: usize) -> String {
 
 fn form_from_settings(g: &GoalSettings, units: UnitSystem, latest_kg: Option<f64>) -> GoalsForm {
     GoalsForm {
-        target_mode: g.target_source.clone().unwrap_or_else(|| "none".into()),
+        // Until the user chooses, the target comes from the estimate.
+        target_mode: g.target_source.clone().unwrap_or_else(|| "estimate".into()),
         sex: g.sex.clone().unwrap_or_default(),
         birth_date: g.birth_date.clone().unwrap_or_default(),
         height: fmt_input(g.height_cm.map(|c| units.height_from_cm(c)), 1),
@@ -137,7 +144,14 @@ fn form_from_settings(g: &GoalSettings, units: UnitSystem, latest_kg: Option<f64
         } else {
             String::new()
         },
-        macro_mode: g.macro_source.clone().unwrap_or_else(|| "custom".into()),
+        // Unset means never chosen, which is the estimate, unless goals were
+        // saved by hand before the choice existed (migration 0011).
+        macro_mode: g.macro_source.clone().unwrap_or_else(|| {
+            let typed = [g.protein_goal_g, g.carbs_goal_g, g.fat_goal_g]
+                .iter()
+                .any(Option::is_some);
+            if typed { "custom" } else { "estimate" }.into()
+        }),
         protein_goal: fmt_input(g.protein_goal_g, 0),
         carbs_goal: fmt_input(g.carbs_goal_g, 0),
         fat_goal: fmt_input(g.fat_goal_g, 0),
@@ -342,6 +356,23 @@ fn macro_plan_view(m: &MacroEstimate, units: UnitSystem, lang: Lang) -> MacroPla
     }
 }
 
+/// Why estimated macronutrient goals are missing, shown under the choice.
+fn macro_note(
+    form: &GoalsForm,
+    target: Option<f64>,
+    has_plan: bool,
+    minor: bool,
+    lang: Lang,
+) -> Option<&'static str> {
+    if form.macro_mode != "estimate" || has_plan || minor {
+        None
+    } else if target.is_none() {
+        Some(lang.t("To estimate macronutrient goals, set a daily calorie target."))
+    } else {
+        Some(lang.t("To estimate macronutrient goals, enter your weight."))
+    }
+}
+
 fn current_source(g: &GoalSettings, lang: Lang) -> &'static str {
     match g.target_source.as_deref() {
         Some("estimate") => lang.t("estimated"),
@@ -402,8 +433,20 @@ pub async fn page(
     let mut scratch = FieldErrors::default();
     let parsed = parse_inputs(&form, units, &mut scratch, today, lang);
     let est = estimate_for(&parsed, today);
-    let macros = macro_estimate_for(&parsed, planned_target(&form, est.as_ref(), lang), today);
+    let target = planned_target(&form, est.as_ref(), lang);
+    let macros = macro_estimate_for(&parsed, target, today);
+    let macro_note = macro_note(
+        &form,
+        target,
+        macros.is_some(),
+        is_minor(&parsed, today),
+        lang,
+    );
     let (activities, goal_choices) = choices(lang);
+    let setup = q.setup.is_some();
+    let suggested_activity = habits::suggested_activity(&Habits::from_profile(&p))
+        .filter(|a| setup && form.activity == a.as_str())
+        .map(|a| a.label(lang));
     let page = GoalsPage {
         lang,
         title: lang.t("Goals").into(),
@@ -414,13 +457,15 @@ pub async fn page(
         current_source: current_source(&g, lang),
         estimate: est.as_ref().and_then(|e| estimate_view(e, lang)),
         macro_plan: macros.map(|m| macro_plan_view(&m, units, lang)),
+        macro_note,
         minor: matches!(est, Some(Estimate::NotForMinors)),
         caution: None,
         weight_unit: units.weight_unit(),
         height_unit: units.height_unit(),
         activities,
         goals: goal_choices,
-        setup: q.setup.is_some(),
+        setup,
+        suggested_activity,
         form,
     };
     Ok(render(&page)?.into_response())
@@ -457,13 +502,9 @@ pub async fn save(
                 );
                 (None, None, None)
             }
-            None => {
-                errors.add(
-                    "target_mode",
-                    lang.t("To estimate a target, fill in sex, date of birth, height, weight and activity level."),
-                );
-                (None, None, None)
-            }
+            // The default choice: saved without a target until the details
+            // are filled in, so the rest of the form can still be saved.
+            None => (None, Some("estimate"), None),
         },
         "custom" => match parse_decimal(&form.custom_target) {
             Ok(Some(v)) => match check_custom_target(v, lang) {
@@ -489,7 +530,8 @@ pub async fn save(
                 (None, None, None)
             }
         },
-        "none" | "" => (None, None, None),
+        "none" => (None, Some("none"), None),
+        "" => (None, None, None),
         _ => {
             errors.add("target_mode", lang.t("Choose how to set your target."));
             (None, None, None)
@@ -505,28 +547,17 @@ pub async fn save(
                 Some(m.fat_g),
                 Some("estimate"),
             ),
-            None => {
-                if is_minor(&parsed, today) {
-                    errors.add(
-                        "macro_mode",
-                        lang.t("Korpus does not estimate macronutrient goals for people under 18. Please ask a doctor or registered dietitian, or enter your own."),
-                    );
-                } else if target.is_none() {
-                    // A target error is already reported; don't repeat it.
-                    if !errors.has("target_mode") && !errors.has("custom_target") {
-                        errors.add(
-                            "macro_mode",
-                            lang.t("To estimate macronutrient goals, set a daily calorie target."),
-                        );
-                    }
-                } else if !errors.has("weight") {
-                    errors.add(
-                        "macro_mode",
-                        lang.t("To estimate macronutrient goals, enter your weight."),
-                    );
-                }
+            None if is_minor(&parsed, today) => {
+                errors.add(
+                    "macro_mode",
+                    lang.t("Korpus does not estimate macronutrient goals for people under 18. Please ask a doctor or registered dietitian, or enter your own."),
+                );
                 (None, None, None, None)
             }
+            // The default choice: saved without goals until the target and
+            // weight are known (see `macro_note`), so the rest of the form
+            // can still be saved.
+            None => (None, None, None, Some("estimate")),
         },
         "custom" | "" => (
             macro_goal(&form.protein_goal, "protein_goal", &mut errors, lang),
@@ -581,6 +612,13 @@ pub async fn save(
         current_target: g.daily_kcal_target.map(fmt_kcal),
         current_source: current_source(&g, lang),
         estimate: est.as_ref().and_then(|e| estimate_view(e, lang)),
+        macro_note: macro_note(
+            &form,
+            target,
+            macro_est.is_some(),
+            is_minor(&parsed, today),
+            lang,
+        ),
         macro_plan: macro_est.map(|m| macro_plan_view(&m, units, lang)),
         minor: matches!(est, Some(Estimate::NotForMinors)),
         caution,
@@ -589,6 +627,7 @@ pub async fn save(
         activities,
         goals: goal_choices,
         setup: false,
+        suggested_activity: None,
         form,
     };
     render_status(status, &page)

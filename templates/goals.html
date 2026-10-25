@@ -10,6 +10,9 @@
 {% if setup %}
 <div class="note">
   <p>{{ lang.t("Optionally set a daily calorie target now. You can change or remove it any time.") }}</p>
+  {% if let Some(a) = suggested_activity %}
+  <p>{{ lang.f1("From your answers, the activity level is set to “{0}”. It already includes your usual steps and sport: if you also record them in Activity, choose Sedentary so they are not counted twice.", a) }}</p>
+  {% endif %}
   <a class="button pill" href="/diary">{{ lang.t("Skip — go to today's diary") }}</a>
 </div>
 {% endif %}
@@ -107,13 +110,14 @@
     <fieldset id="target_mode">
       <legend>{{ lang.t("How should your target be set?") }}</legend>
       <div class="choices on-bg">
-        <label><input type="radio" name="target_mode" value="estimate"{% if form.target_mode == "estimate" %} checked{% endif %}><span class="choice-text">{{ lang.t("Use the estimate from the details above") }}</span>{% include "_check.html" %}</label>
+        <label><input type="radio" name="target_mode" value="estimate"{% if form.target_mode == "estimate" || form.target_mode.is_empty() %} checked{% endif %}><span class="choice-text">{{ lang.t("Use the estimate from the details above") }}</span>{% include "_check.html" %}</label>
         <label><input type="radio" name="target_mode" value="custom"{% if form.target_mode == "custom" %} checked{% endif %}><span class="choice-text">{{ lang.t("Set my own target") }}</span>{% include "_check.html" %}</label>
-        <label><input type="radio" name="target_mode" value="none"{% if form.target_mode == "none" || form.target_mode.is_empty() %} checked{% endif %}><span class="choice-text">{{ lang.t("No target") }}</span>{% include "_check.html" %}</label>
+        <label><input type="radio" name="target_mode" value="none"{% if form.target_mode == "none" %} checked{% endif %}><span class="choice-text">{{ lang.t("No target") }}</span>{% include "_check.html" %}</label>
       </div>
       {% if let Some(e) = errors.get("target_mode") %}<p class="field-error group-foot">{{ e }}</p>{% endif %}
+      {% if form.target_mode == "estimate" && estimate.is_none() && !minor %}<p class="group-foot">{{ lang.t("To estimate a target, fill in sex, date of birth, height, weight and activity level.") }}</p>{% endif %}
     </fieldset>
-    <div class="group">
+    <div class="group" data-custom-for="target_mode">
       <div class="form-row c-energy">
         <label for="custom_target" class="macro-label"><span class="dot" aria-hidden="true"></span>{{ lang.t("Own target (kcal per day)") }}</label>
         <div class="control"><input type="text" id="custom_target" name="custom_target" value="{{ form.custom_target }}" inputmode="numeric" autocomplete="off" {% if errors.has("custom_target") %}aria-invalid="true" aria-describedby="custom_target-error"{% endif %}></div>
@@ -131,6 +135,7 @@
         <label><input type="radio" name="macro_mode" value="custom"{% if form.macro_mode != "estimate" %} checked{% endif %}><span class="choice-text">{{ lang.t("Set my own goals") }}</span>{% include "_check.html" %}</label>
       </div>
       {% if let Some(e) = errors.get("macro_mode") %}<p class="field-error group-foot">{{ e }}</p>{% endif %}
+      {% if let Some(n) = macro_note %}<p class="group-foot">{{ n }}</p>{% endif %}
     </fieldset>
     {% if let Some(m) = macro_plan %}
     <div class="card estimate" aria-labelledby="macro-result">
@@ -144,7 +149,7 @@
       <p class="subtle">{{ lang.t("Steps and sport recorded for a day add their energy to that day's carbohydrate goal, the main fuel of exercise.") }}</p>
     </div>
     {% endif %}
-    <div class="group">
+    <div class="group" data-custom-for="macro_mode">
     {% for mf in self.macro_fields() %}{% let id = mf.id %}{% let label = mf.label %}{% let value = mf.value.as_str() %}
       <div class="form-row c-{{ id.trim_end_matches("_goal") }}">
         <label for="{{ id }}" class="macro-label"><span class="dot" aria-hidden="true"></span>{{ lang.f1("{0} (g per day)", label) }}</label>

@@ -49,9 +49,10 @@ With the default settings the database is created at `./data/korpus.db`.
 ### First run
 
 1. **Create your login.** Korpus asks for a username, a password (at least 10 characters) and a *setup code*. The code is printed in the server log when Korpus starts (`docker compose logs korpus`, or the terminal running it), so only the person running the server can create the account, even if someone else reaches a new instance first. It is only needed once.
-2. Choose a language (or keep following the browser), your country, metric or imperial units and your time zone. The country picks the food composition table search uses. The time zone decides when a new diary day starts.
-3. You can set a calorie goal now, or skip it.
-4. You land on today's diary. Press **Add food**, search for a product or create it from its label, enter the amount and add it to a meal.
+2. Choose a language (or keep following the browser; the page switches to it at once), your country, metric or imperial units and your time zone. The country picks the food composition table search uses. The time zone decides when a new diary day starts.
+3. A few questions about your usual activity, one per screen: roughly how many steps you take a day; whether you train at the gym, and if so on which days of the week, for how long and whether to start from a program template (Push / Pull / Legs, Upper / Lower, Full body or 5×5; "Not now" leaves the Gym empty); and whether you play a sport, and if so which one, on which days and for how long. The gym is not among the sports, since it is planned with programs under Activity › Gym. Tap an answer to move on; every question can be skipped. The answers suggest the activity level in Goals (see [Calorie target](#calorie-target)) and the sport offered first in Activity. The gym and the sport are also added to Activity as sessions repeating every week on the chosen days, starting today, so the energy they use is added to each of those days' totals; change, end or skip a day there like any repeating activity. A program template is placed on the chosen gym days when it has as many sessions a week; otherwise it becomes a rotation, done in order on whichever days you train.
+4. You can set a calorie goal now, or skip it.
+5. You land on today's diary. Press **Add food**, search for a product or create it from its label, enter the amount and add it to a meal.
 
 ## Configuration
 
@@ -413,6 +414,15 @@ for spreadsheets. A JSON export can be imported into a new, **empty**
 installation. Import never merges into existing data, and an invalid file
 changes nothing.
 
+### Resetting the profile
+
+**Settings → Preferences → Reset profile** erases everything you recorded:
+foods, diary, weights, steps, activity, gym programs and workouts, goals and
+settings. You stay logged in and go through first-run setup again. Your
+username, password and two-factor authentication are kept, and so are the
+food composition tables. It cannot be undone, so download a database backup
+first if you may want the data back.
+
 ## Upgrades
 
 1. Back up (see above).
@@ -470,6 +480,25 @@ breastfeeding or a relevant medical condition, and recommends professional
 advice instead. Custom targets must be between 800 and 6000 kcal, and you get
 a caution below 1200. The target is recalculated only when you save the goal
 form, never when you log a new weight.
+
+The activity level is suggested from the usual activity answered at first
+run, unless one is already set. The answers become energy above rest in
+MET-hours a week (about kcal per kg of body weight):
+
+- steps beyond 5,000 a day, which *Sedentary* already includes, taking the
+  middle of the chosen range (over 15,000 counts as 17,500), walked at 100
+  steps a minute and 3.5 METs;
+- the sport's MET value (as for recorded sport, see [Activity](#activity))
+  minus 1, times sessions a week and session length;
+- the gym the same way, as Traditional Strength Training (3.5 METs).
+
+Every 20 MET-hours a week is one level above *Sedentary*, rounded to the
+nearest. One level adds 17.5% of resting energy, roughly 27 MET-hours a week
+for an average adult, so the suggestion leans slightly high of the arithmetic
+while staying below the levels' descriptions, which tend to overestimate. For
+example, 7,500 steps a day and running three times 45 minutes a week (about
+7 + 18 MET-hours) suggest *Lightly active*. The suggestion is only a starting
+point: change it in Goals at any time.
 
 ### Macronutrient goals
 
@@ -611,6 +640,7 @@ Code layout (`src/`):
 | `diary` | Meals, entries with nutrition snapshots, daily totals |
 | `weight` | Weight history (canonical kg) |
 | `goals` | Mifflin–St Jeor estimate, macronutrient split, safety rules, goal settings |
+| `habits` | Usual activity asked at first run and the activity level it suggests |
 | `gym` | Programs, routines and their exercises; the built-in exercise list (`gym::exercises`), templates (`gym::starter`) and logged workouts (`gym::workouts`) |
 | `units` | Metric/imperial conversion, calendar dates per time zone, input parsing |
 | `backup` | JSON/CSV export, JSON import, SQLite snapshots |

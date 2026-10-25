@@ -3,11 +3,12 @@
 
 use askama::Template;
 use axum::Form;
-use axum::extract::{Multipart, Path, Query, State};
+use axum::extract::{Multipart, Path, Query, RawQuery, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 
+use super::activity::{MenuOption, fmt_duration};
 use super::{
     AppState, Theme, browser_lang, current_lang, current_theme, flash_message, render,
     render_status, see_other,
@@ -17,9 +18,14 @@ use crate::countries::{self, CountryOption};
 use crate::datasets::{self, Bundled, Dataset, UploadFile};
 use crate::error::{AppError, AppResult};
 use crate::forms::FieldErrors;
+use crate::gym::{
+    self,
+    starter::{self, STARTERS},
+};
+use crate::habits::{self, Habits, HabitsForm, UsualSteps};
 use crate::i18n::Lang;
-use crate::profile;
-use crate::units::{UnitSystem, valid_timezone};
+use crate::units::{UnitSystem, today_in, valid_timezone, weekday_long};
+use crate::{profile, sports};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -105,6 +111,25 @@ pub fn language_options(lang: Lang) -> Vec<LanguageOption> {
     options
 }
 
+/// The first-run form: the profile, then the usual-activity questions.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct SetupForm {
+    #[serde(flatten)]
+    pub profile: ProfileForm,
+    #[serde(flatten)]
+    pub habits: HabitsForm,
+}
+
+/// One answer card of a setup question.
+pub struct CardChoice {
+    pub value: String,
+    pub label: String,
+    /// A second line under the label, or empty.
+    pub detail: &'static str,
+    /// Id of an icon in `static/sports.svg`, or empty for none.
+    pub icon: &'static str,
+}
+
 #[derive(Template)]
 #[template(path = "setup.html")]
 pub struct SetupPage {
@@ -112,57 +137,192 @@ pub struct SetupPage {
     pub title: String,
     pub nav: &'static str,
     pub form: ProfileForm,
+    pub habits: HabitsForm,
     pub errors: FieldErrors,
     pub languages: Vec<LanguageOption>,
     pub countries: Vec<CountryOption>,
+    pub step_choices: Vec<CardChoice>,
+    pub sport_choices: Vec<CardChoice>,
+    pub other_sports: Vec<MenuOption>,
+    /// Monday to Sunday, valued 0 to 6.
+    pub day_choices: Vec<CardChoice>,
+    pub minute_choices: Vec<CardChoice>,
+    pub program_choices: Vec<CardChoice>,
 }
 
-pub async fn setup_form(State(state): State<AppState>) -> AppResult<Response> {
+impl SetupPage {
+    fn new(lang: Lang, form: ProfileForm, habits: HabitsForm, errors: FieldErrors) -> Self {
+        let card = |value: String, label: String| CardChoice {
+            value,
+            label,
+            detail: "",
+            icon: "",
+        };
+        let mut step_choices: Vec<CardChoice> = UsualSteps::ALL
+            .into_iter()
+            .map(|s| CardChoice {
+                value: s.as_str().into(),
+                label: s.label(lang).into(),
+                detail: s.detail(lang),
+                icon: "",
+            })
+            .collect();
+        step_choices.push(card("unsure".into(), lang.t("I am not sure").into()));
+        let mut sport_choices: Vec<CardChoice> = habits::POPULAR_SPORTS
+            .iter()
+            .filter_map(|k| sports::find(k))
+            .map(|s| CardChoice {
+                value: s.key.into(),
+                label: s.name(lang).into(),
+                detail: "",
+                icon: s.icon(),
+            })
+            .collect();
+        sport_choices.push(CardChoice {
+            value: habits::OTHER.into(),
+            label: lang.t("Another sport").into(),
+            detail: "",
+            icon: sports::CUSTOM_ICON,
+        });
+        let mut other_sports = vec![MenuOption {
+            value: "",
+            label: lang.t("Choose"),
+            icon: "",
+            selected: habits.other_sport.is_empty(),
+        }];
+        other_sports.extend(
+            sports::sorted(lang)
+                .into_iter()
+                .filter(|s| s.key != habits::GYM_SPORT)
+                .map(|s| MenuOption {
+                    value: s.key,
+                    label: s.name(lang),
+                    icon: s.icon(),
+                    selected: habits.other_sport == s.key,
+                }),
+        );
+        let day_choices = (0..7)
+            .map(|i| card(i.to_string(), weekday_long(i, lang).into()))
+            .collect();
+        let last = habits::MINUTE_CHOICES.len() - 1;
+        let minute_choices = habits::MINUTE_CHOICES
+            .iter()
+            .enumerate()
+            .map(|(i, m)| {
+                let label = if i == last {
+                    lang.f1("{0} or more", fmt_duration(*m))
+                } else {
+                    fmt_duration(*m)
+                };
+                card(m.to_string(), label)
+            })
+            .collect();
+        let mut program_choices: Vec<CardChoice> = STARTERS
+            .iter()
+            .map(|s| CardChoice {
+                value: s.key.into(),
+                label: s.name(lang).into(),
+                detail: s.description(lang),
+                icon: "",
+            })
+            .collect();
+        program_choices.push(CardChoice {
+            value: habits::NO_PROGRAM.into(),
+            label: lang.t("Not now").into(),
+            detail: lang.t("Plan your own later in Activity, under Gym"),
+            icon: "",
+        });
+        SetupPage {
+            lang,
+            title: lang.t("Welcome to Korpus").into(),
+            nav: "",
+            form,
+            habits,
+            errors,
+            languages: language_options(lang),
+            countries: countries::options(lang),
+            step_choices,
+            sport_choices,
+            other_sports,
+            day_choices,
+            minute_choices,
+            program_choices,
+        }
+    }
+}
+
+/// The setup page. With a query, it is the form as filled in so far, sent
+/// by app.js when the language changes so the page switches to it at once;
+/// nothing is saved until the form is submitted.
+pub async fn setup_form(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    RawQuery(query): RawQuery,
+    Query(mut filled): Query<SetupForm>,
+) -> AppResult<Response> {
     let p = profile::load(&state.db).await?;
     if p.setup_complete {
         return Ok(see_other("/settings"));
     }
+    if query.is_some_and(|q| !q.is_empty()) {
+        if !filled.profile.language.is_empty() && Lang::parse(&filled.profile.language).is_none() {
+            filled.profile.language.clear();
+        }
+        let lang = form_lang(&filled.profile, &headers);
+        let page = SetupPage::new(lang, filled.profile, filled.habits, FieldErrors::default());
+        return Ok(render(&page)?.into_response());
+    }
     let lang = current_lang();
-    let page = SetupPage {
-        lang,
-        title: lang.t("Welcome to Korpus").into(),
-        nav: "",
-        form: ProfileForm {
-            unit_system: "metric".into(),
-            timezone: state.config.default_timezone.clone(),
-            language: p.language.unwrap_or_default(),
-            country: p.country.unwrap_or_default(),
-        },
-        errors: FieldErrors::default(),
-        languages: language_options(lang),
-        countries: countries::options(lang),
+    let form = ProfileForm {
+        unit_system: "metric".into(),
+        timezone: state.config.default_timezone.clone(),
+        language: p.language.clone().unwrap_or_default(),
+        country: p.country.clone().unwrap_or_default(),
     };
+    let habits = HabitsForm::from_habits(&Habits::from_profile(&p));
+    let page = SetupPage::new(lang, form, habits, FieldErrors::default());
     Ok(render(&page)?.into_response())
 }
 
 pub async fn setup_save(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Form(form): Form<ProfileForm>,
+    Form(form): Form<SetupForm>,
 ) -> AppResult<Response> {
-    let lang = form_lang(&form, &headers);
-    match validate(&form, lang) {
-        Ok(v) => {
+    let lang = form_lang(&form.profile, &headers);
+    let mut habit_errors = FieldErrors::default();
+    let answers = form.habits.parse(lang, &mut habit_errors);
+    let starter = if answers.goes_to_gym == Some(true) {
+        form.habits.starter(lang, &mut habit_errors)
+    } else {
+        None
+    };
+    let profile = validate(&form.profile, lang);
+    match profile {
+        Ok(v) if habit_errors.is_empty() => {
+            // The answers first: saving the profile completes setup.
+            habits::save(&state.db, &answers).await?;
+            habits::plan(&state.db, &answers, today_in(&v.timezone)).await?;
+            // Only into an empty Gym, so sending the form twice adds nothing.
+            if let Some(s) = starter
+                && gym::program_count(&state.db).await? == 0
+            {
+                let days = answers.gym.map(|g| g.days);
+                starter::create(&state.db, s, s.name(lang), lang, days).await?;
+            }
             profile::save(&state.db, v.units, &v.timezone, v.language, v.country).await?;
             Ok(see_other("/goals?setup=1"))
         }
-        Err(errors) => render_status(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            &SetupPage {
-                lang,
-                title: lang.t("Welcome to Korpus").into(),
-                nav: "",
-                form,
-                errors,
-                languages: language_options(lang),
-                countries: countries::options(lang),
-            },
-        ),
+        result => {
+            let mut errors = result.err().unwrap_or_default();
+            for (field, msg) in habit_errors.iter() {
+                errors.add(field, msg.clone());
+            }
+            render_status(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                &SetupPage::new(lang, form.profile, form.habits, errors),
+            )
+        }
     }
 }
 
@@ -459,6 +619,14 @@ pub async fn export_csv(State(state): State<AppState>) -> AppResult<Response> {
         format!("korpus-diary-{}.csv", stamp()),
         backup::diary_csv(&export.diary_entries),
     ))
+}
+
+/// Erases the user's data and starts first-run setup again; the login stays.
+pub async fn reset(State(state): State<AppState>) -> AppResult<Response> {
+    let _permit = heavy_task().await?;
+    backup::reset_profile(&state.db).await?;
+    tracing::info!("profile reset");
+    Ok(see_other("/setup"))
 }
 
 pub async fn backup(State(state): State<AppState>) -> AppResult<Response> {

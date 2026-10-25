@@ -443,6 +443,120 @@
     return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   }
 
+  // First-run setup as one card per screen, as in phone apps: a progress
+  // bar, a back button and Continue. Tapping an answer moves on by itself;
+  // choosing with the keyboard does not, so arrow keys can browse the
+  // answers. The gym and sport details only show after their "Yes". The
+  // phone's back gesture goes back one question. Changing the language
+  // reloads the page in it, with the answers given so far.
+  function setupOnboarding(form) {
+    var steps = Array.prototype.slice.call(form.querySelectorAll("[data-step]"));
+    if (!steps.length) return;
+    var bar = form.querySelector(".onboarding-progress");
+    var fill = bar && bar.querySelector("span");
+    var back = form.querySelector("[data-onboarding-back]");
+    var otherToggle = form.querySelector("[data-other-toggle]");
+    var otherRows = form.querySelectorAll("[data-other-only]");
+    var tapped = 0;
+    // The server checks every answer and shows its errors on the first page.
+    form.noValidate = true;
+
+    // Whether the yes/no question a step depends on has this answer.
+    function answered(step, value) {
+      var input = form.querySelector('input[name="' + step.getAttribute("data-if") + '"][value="' + value + '"]');
+      return !!(input && input.checked);
+    }
+    function shown() {
+      return steps.filter(function (s) {
+        return !s.hasAttribute("data-if") || answered(s, "yes");
+      });
+    }
+    // The progress counts the follow-up questions until "No" is chosen, so
+    // the bar never moves backwards after "Yes".
+    function counted() {
+      return steps.filter(function (s) {
+        return !s.hasAttribute("data-if") || !answered(s, "no");
+      });
+    }
+    function show(step, focus) {
+      var list = shown();
+      step = list[Math.max(0, list.indexOf(step))];
+      steps.forEach(function (s) { s.hidden = s !== step; });
+      var all = counted();
+      var i = Math.max(0, all.indexOf(step));
+      if (bar) {
+        var pct = Math.round((i + 1) / all.length * 100);
+        bar.setAttribute("aria-valuenow", pct);
+        bar.setAttribute("aria-valuetext", (bar.getAttribute("data-of") || "{0} / {1}")
+          .replace("{0}", i + 1).replace("{1}", all.length));
+        if (fill) fill.style.setProperty("--progress", String(pct / 100));
+      }
+      if (back) back.hidden = i === 0;
+      window.scrollTo(0, 0);
+      if (focus) {
+        var heading = step.querySelector("[tabindex='-1']");
+        if (heading) heading.focus({ preventScroll: true });
+      }
+    }
+    function current() {
+      return steps.filter(function (s) { return !s.hidden; })[0] || steps[0];
+    }
+    function next() {
+      var list = shown();
+      var i = list.indexOf(current());
+      if (i >= list.length - 1) {
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+        return;
+      }
+      history.pushState({ onboarding: steps.indexOf(list[i + 1]) }, "");
+      show(list[i + 1], true);
+    }
+    function syncOther() {
+      otherRows.forEach(function (r) { r.hidden = !(otherToggle && otherToggle.checked); });
+    }
+
+    form.querySelectorAll("[data-next]").forEach(function (b) { b.addEventListener("click", next); });
+    if (back) back.addEventListener("click", function () { history.back(); });
+    window.addEventListener("popstate", function (e) {
+      var i = e.state && typeof e.state.onboarding === "number" ? e.state.onboarding : 0;
+      show(steps[i] || steps[0], true);
+    });
+    form.addEventListener("pointerup", function (e) {
+      if (e.target.closest(".option-card")) tapped = Date.now();
+    });
+    form.addEventListener("change", function (e) {
+      var input = e.target;
+      if (input.name === "language") {
+        var params = new URLSearchParams(new FormData(form));
+        window.location.replace(form.getAttribute("action") + "?" + params.toString());
+        return;
+      }
+      syncOther();
+      if (form.querySelector('[data-if="' + input.name + '"]')) show(current(), false);
+      if (input.type !== "radio" || !input.closest(".option-card")) return;
+      // "Another sport" still needs a sport from its list.
+      if (input === otherToggle || Date.now() - tapped > 1000) return;
+      var list = shown();
+      if (list.indexOf(current()) >= list.length - 1) return;
+      // A moment to see the choice marked before the next question.
+      setTimeout(next, 220);
+    });
+    // Links in the error summary open the question they are about.
+    form.querySelectorAll(".error-summary a[href^='#']").forEach(function (a) {
+      a.addEventListener("click", function () {
+        var target = document.getElementById(a.getAttribute("href").slice(1));
+        var step = target && target.closest("[data-step]");
+        if (step) show(step, false);
+      });
+    });
+
+    syncOther();
+    var invalid = form.querySelector("[data-step] .field-error, [data-step] [aria-invalid='true']");
+    var first = invalid ? invalid.closest("[data-step]") : steps[0];
+    history.replaceState({ onboarding: steps.indexOf(first) }, "");
+    show(first, false);
+  }
+
   function setupMenu(select) {
     if (select.hasAttribute("data-menu") || select.multiple) return;
     select.setAttribute("data-menu", "");
@@ -1159,6 +1273,20 @@
       sync();
     });
 
+    // Own values (the calorie target, the macronutrient goals) only show
+    // while "Set my own …" is chosen in the choice they belong to.
+    document.querySelectorAll("[data-custom-for]").forEach(function (group) {
+      var name = group.getAttribute("data-custom-for");
+      var form = group.closest("form");
+      var custom = form && form.querySelector('input[name="' + name + '"][value="custom"]');
+      if (!custom) return;
+      function sync() { group.hidden = !custom.checked; }
+      form.addEventListener("change", function (e) {
+        if (e.target.name === name) sync();
+      });
+      sync();
+    });
+
     // The name and intensity fields only apply to a custom sport.
     document.querySelectorAll("select[data-sport-menu]").forEach(function (menu) {
       var rows = menu.form ? menu.form.querySelectorAll("[data-custom-only]") : [];
@@ -1169,6 +1297,8 @@
 
     // Date fields in forms become a capsule showing the date, as in iOS.
     document.querySelectorAll("input[data-calendar]").forEach(setupDateField);
+
+    document.querySelectorAll("form[data-onboarding]").forEach(setupOnboarding);
 
     if (location.pathname === "/setup") {
       var tz = document.querySelector("input[data-detect-timezone]");

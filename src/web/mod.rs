@@ -164,6 +164,7 @@ pub fn router(state: AppState) -> Router {
         .route("/settings", get(settings::page).post(settings::save))
         .route("/settings/appearance", post(settings::appearance))
         .route("/settings/steps", post(settings::save_step_goal))
+        .route("/settings/reset", post(settings::reset))
         .route("/settings/export.json", get(settings::export_json))
         .route("/settings/diary.csv", get(settings::export_csv))
         .route("/settings/backup.sqlite", get(settings::backup))

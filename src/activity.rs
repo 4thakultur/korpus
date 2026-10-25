@@ -74,6 +74,10 @@ impl Weekdays {
         self.0 == 0
     }
 
+    pub fn count(self) -> usize {
+        self.0.count_ones() as usize
+    }
+
     /// "Every day" or the days in week order, e.g. "Mon, Thu".
     pub fn label(self, lang: Lang) -> String {
         if self == Self::ALL {
