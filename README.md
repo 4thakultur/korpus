@@ -677,3 +677,13 @@ estimates, no social features, no gamification and no subscriptions.
 Planned after the MVP: barcode scanning with the camera (typing a barcode in
 search already works), favourite and recent foods, recipes, copying a
 previous day, and an installable PWA.
+
+## License
+
+Korpus is free software, licensed under the
+[GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0-only).
+You may use, study, change and share it. If you run a modified version
+for other people over a network, you must offer them its source code under
+the same license. Data shipped with or imported into Korpus keeps its own
+licence (see [Data licensing](#data-licensing) and
+[Food composition tables](#food-composition-tables)).
